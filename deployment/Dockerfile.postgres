@@ -4,10 +4,8 @@
 
 FROM postgres:16
 
-# Set environment variables
-ENV POSTGRES_DB=rag_db \
-    POSTGRES_USER=admin \
-    POSTGRES_PASSWORD=admin
+# Set environment variables (values come from docker-compose.yml)
+# DO NOT hardcode passwords here - they are set via environment variables
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
