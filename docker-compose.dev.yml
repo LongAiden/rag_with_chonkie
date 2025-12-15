@@ -1,0 +1,75 @@
+# ============================================
+# Docker Compose - Development Configuration
+# ============================================
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  # Override app service for development
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Use development build args if needed
+      # args:
+      #   - BUILD_ENV=development
+
+    # Enable hot reload
+    command: uvicorn document_processing.full_pipeline_pgvector:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
+
+    # Mount source code for live editing
+    volumes:
+      - .:/app
+      - upload_data:/app/uploads
+      - ./logs:/app/logs
+      # Exclude Python cache from sync (performance)
+      - /app/__pycache__
+      - /app/**/__pycache__
+
+    # Development environment variables
+    environment:
+      - LOG_LEVEL=DEBUG
+      - LOG_ENTITY_EXTRACTION=true
+      - LOG_RELATIONSHIP_EXTRACTION=true
+      - PYTHONUNBUFFERED=1
+
+    # Expose additional ports if needed
+    ports:
+      - "8000:8000"
+      - "8001:8001"  # Extra port for debugging
+
+  # PostgreSQL with debug logging
+  postgres:
+    environment:
+      - POSTGRES_LOG_STATEMENT=all
+      - POSTGRES_LOG_MIN_MESSAGES=info
+
+    # Expose port for external access
+    ports:
+      - "5432:5432"
+
+  # Development database viewer
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: rag_pgadmin_dev
+    environment:
+      PGADMIN_DEFAULT_EMAIL: dev@rag.local
+      PGADMIN_DEFAULT_PASSWORD: dev
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - rag_network
+
+volumes:
+  upload_data:
+  pgadmin_data:
+
+networks:
+  rag_network:
+    driver: bridge

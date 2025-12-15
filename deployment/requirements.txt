@@ -28,10 +28,17 @@ google-generativeai>=0.8.0
 # ReRank
 rank_bm25
 
+# Graph & Knowledge Extraction
+spacy>=3.7.0  # For NER and entity extraction
+spacy-transformers>=1.3.0  # Transformer-based models for spacy
+networkx>=3.0  # For graph analysis and algorithms
+# Note: pgRouting is a PostgreSQL extension, not a Python package
+
 # Web Interface & API
 streamlit>=1.31.0
 fastapi>=0.104.0
 pydantic>=2.5.0
+pydantic-settings>=2.0.0  # For configuration management
 pydantic-ai>=0.0.7
 pydantic-ai-slim[google]
 uvicorn[standard]>=0.24.0

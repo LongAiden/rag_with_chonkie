@@ -1,0 +1,61 @@
+# ============================================
+# PostgreSQL with pgvector + pgRouting + PostGIS
+# ============================================
+
+FROM postgres:16
+
+# Set environment variables
+ENV POSTGRES_DB=rag_db \
+    POSTGRES_USER=admin \
+    POSTGRES_PASSWORD=admin
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    postgresql-server-dev-16 \
+    git \
+    cmake \
+    libboost-graph-dev \
+    libcgal-dev \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pgvector
+RUN cd /tmp && \
+    git clone --branch v0.7.4 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    make && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/pgvector
+
+# Install PostGIS (required by pgRouting)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16-postgis-3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pgRouting
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16-pgrouting \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy initialization scripts
+COPY ../migrations/*.sql /docker-entrypoint-initdb.d/
+
+# Add custom postgresql.conf settings for better performance
+RUN echo "shared_preload_libraries = 'pg_stat_statements'" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "max_connections = 100" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "shared_buffers = 256MB" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "effective_cache_size = 1GB" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "maintenance_work_mem = 64MB" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "checkpoint_completion_target = 0.9" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "wal_buffers = 16MB" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "default_statistics_target = 100" >> /usr/share/postgresql/postgresql.conf.sample
+
+# Expose PostgreSQL port
+EXPOSE 5432
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+    CMD pg_isready -U $POSTGRES_USER -d $POSTGRES_DB || exit 1
