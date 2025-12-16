@@ -17,7 +17,7 @@ from config import graph_config, get_graph_config
 
 # Access configuration
 threshold = graph_config.entity_confidence_threshold  # 0.6
-model = graph_config.gemini_model  # "gemini-2.0-flash-exp"
+model = graph_config.gemini_model  # "gemini-2.5-flash"
 max_entities = graph_config.max_entities_per_chunk  # 50
 ```
 
@@ -95,7 +95,7 @@ PAGERANK_DAMPING_FACTOR=0.85
 
 # LLM
 GOOGLE_API_KEY=your-api-key
-GEMINI_MODEL=gemini-2.0-flash-exp
+GEMINI_MODEL=gemini-2.5-flash
 
 # Embedding
 ENTITY_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2

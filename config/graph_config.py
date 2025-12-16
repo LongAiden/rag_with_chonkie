@@ -3,13 +3,20 @@ Configuration for Graph and Entity Extraction.
 """
 
 import os
-from typing import List
-from pydantic_settings import BaseSettings
+from typing import List, Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
 class GraphConfig(BaseSettings):
     """Graph and entity extraction configuration."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
 
     # ============================================
     # LLM Configuration
@@ -19,7 +26,7 @@ class GraphConfig(BaseSettings):
         description="Gemini API key for entity/relationship extraction"
     )
     gemini_model: str = Field(
-        default="gemini-2.0-flash-exp",
+        default=os.getenv("GEMINI_MODEL", ""),
         description="Gemini model to use for extraction"
     )
 
@@ -184,14 +191,10 @@ class GraphConfig(BaseSettings):
         description="Log relationship extraction details"
     )
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    # (rest unchanged)
 
 
-# Singleton instance
-_graph_config: GraphConfig = None
+_graph_config: Optional[GraphConfig] = None
 
 
 def get_graph_config() -> GraphConfig:
@@ -254,7 +257,7 @@ DEFAULT_MAX_HOPS=2
 
 # LLM Configuration
 GOOGLE_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.0-flash-exp
+GEMINI_MODEL=gemini-2.5-flash
 
 # Performance
 BATCH_SIZE=10

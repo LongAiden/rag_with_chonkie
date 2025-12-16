@@ -25,6 +25,7 @@ from models.graph_models import (
     BatchExtractionResponse,
     ExtractionResult,
 )
+from config.graph_config import get_graph_config
 from graph_processing import (
     EntityExtractor,
     RelationshipExtractor,
@@ -47,16 +48,26 @@ async def get_entity_extractor(pool: asyncpg.Pool = Depends(get_db_pool)):
     import os
     from sentence_transformers import SentenceTransformer
 
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
-    embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    return EntityExtractor(pool, gemini_api_key, embedding_model)
+    config = get_graph_config()
+    gemini_api_key = config.gemini_api_key or os.getenv("GOOGLE_API_KEY")
+    if not gemini_api_key:
+        raise HTTPException(status_code=500, detail="Gemini API key not configured")
+
+    gemini_model = config.gemini_model
+    embedding_model = SentenceTransformer(config.entity_embedding_model)
+    return EntityExtractor(pool, gemini_api_key, gemini_model, embedding_model)
 
 
 async def get_relationship_extractor(pool: asyncpg.Pool = Depends(get_db_pool)):
     """Get relationship extractor instance."""
     import os
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
-    return RelationshipExtractor(pool, gemini_api_key)
+
+    config = get_graph_config()
+    gemini_api_key = config.gemini_api_key or os.getenv("GOOGLE_API_KEY")
+    if not gemini_api_key:
+        raise HTTPException(status_code=500, detail="Gemini API key not configured")
+
+    return RelationshipExtractor(pool, gemini_api_key, config.gemini_model)
 
 
 async def get_graph_service(pool: asyncpg.Pool = Depends(get_db_pool)):

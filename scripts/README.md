@@ -55,7 +55,7 @@ RELATIONSHIP_CONFIDENCE_THRESHOLD=0.6
 
 # Gemini API configuration
 GOOGLE_API_KEY=your_key_here
-GEMINI_MODEL=gemini-2.0-flash-exp
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ### Performance Notes

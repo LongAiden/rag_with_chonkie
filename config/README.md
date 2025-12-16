@@ -97,7 +97,7 @@ if is_relationship_type_enabled("USES"):
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `gemini_api_key` | from env | Gemini API key |
-| `gemini_model` | gemini-2.0-flash-exp | Gemini model name |
+| `gemini_model` | gemini-2.5-flash | Gemini model name |
 
 ### Embedding Configuration
 | Parameter | Default | Description |
@@ -149,7 +149,7 @@ PAGERANK_MAX_ITERATIONS=100
 
 # LLM
 GOOGLE_API_KEY=your-api-key
-GEMINI_MODEL=gemini-2.0-flash-exp
+GEMINI_MODEL=gemini-2.5-flash
 
 # Performance
 BATCH_SIZE=10

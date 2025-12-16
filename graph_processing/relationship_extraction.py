@@ -17,11 +17,12 @@ logger = logging.getLogger(__name__)
 class RelationshipExtractor:
     """Extract relationships between entities using Gemini."""
 
-    def __init__(self, db_pool: asyncpg.Pool, gemini_api_key: str):
+    def __init__(self, db_pool: asyncpg.Pool, gemini_api_key: str, gemini_model: str):
         self.db_pool = db_pool
         self.gemini_api_key = gemini_api_key
         genai.configure(api_key=gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.gemini_model = gemini_model or "gemini-2.5-flash"
+        self.model = genai.GenerativeModel(self.gemini_model)
 
     async def extract_relationships_from_chunk(
         self,

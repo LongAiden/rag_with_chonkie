@@ -2,8 +2,10 @@
 Entity extraction from text chunks using LLM-based extraction.
 """
 
+import json
 import logging
-from typing import List, Dict, Any
+import re
+from typing import List, Dict, Any, Sequence
 from uuid import UUID
 import asyncpg
 from google import generativeai as genai
@@ -13,15 +15,27 @@ from .entity_types import EntityType, ENTITY_TYPE_DESCRIPTIONS
 logger = logging.getLogger(__name__)
 
 
+class EntityExtractionError(Exception):
+    """Raised when Gemini entity extraction fails."""
+
+
 class EntityExtractor:
     """Extract entities from text chunks using Gemini."""
 
-    def __init__(self, db_pool: asyncpg.Pool, gemini_api_key: str, embedding_model):
+    def __init__(
+        self,
+        db_pool: asyncpg.Pool,
+        gemini_api_key: str,
+        gemini_model: str,
+        embedding_model,
+    ):
         self.db_pool = db_pool
         self.gemini_api_key = gemini_api_key
         self.embedding_model = embedding_model
         genai.configure(api_key=gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.gemini_model = gemini_model or "gemini-2.5-flash"
+        self.model = genai.GenerativeModel(self.gemini_model)
+        self.valid_entity_types = {et.value for et in EntityType}
 
     async def extract_entities_from_chunk(
         self,
@@ -44,34 +58,57 @@ class EntityExtractor:
         prompt = self._create_extraction_prompt(chunk_text)
 
         try:
-            # Call Gemini to extract entities
             response = self.model.generate_content(prompt)
             entities_text = response.text
-
-            # Parse the response (expecting JSON-like format)
             entities = self._parse_entities(entities_text, confidence_threshold)
-
-            # Store entities in database
-            stored_entities = []
-            for entity_data in entities:
-                entity_id = await self._store_entity(
-                    chunk_id=chunk_id,
-                    entity_name=entity_data['name'],
-                    entity_type=entity_data['type'],
-                    confidence=entity_data['confidence'],
-                    metadata=entity_data.get('metadata', {})
-                )
-                stored_entities.append({
-                    'entity_id': entity_id,
-                    **entity_data
-                })
+            stored_entities = await self._store_entities(chunk_id, entities)
 
             logger.info(f"Extracted {len(stored_entities)} entities from chunk {chunk_id}")
             return stored_entities
 
-        except Exception as e:
-            logger.error(f"Error extracting entities: {e}")
-            return []
+        except Exception as exc:
+            message = self._format_model_error(exc)
+            logger.error(f"Error extracting entities for chunk {chunk_id}: {message}")
+            raise EntityExtractionError(message) from exc
+
+    async def extract_entities_for_batch(
+        self,
+        chunk_payloads: Sequence[Dict[str, Any]],
+        confidence_threshold: float = 0.6
+    ) -> Dict[UUID, List[Dict[str, Any]]]:
+        """
+        Extract entities for multiple chunks in a single Gemini request.
+
+        Args:
+            chunk_payloads: Sequence of {'chunk_id': UUID, 'chunk_text': str}
+            confidence_threshold: Minimum confidence score (0-1)
+
+        Returns:
+            Dict mapping chunk_id to list of stored entity dicts
+        """
+        if not chunk_payloads:
+            return {}
+
+        prompt = self._create_batch_prompt(chunk_payloads)
+
+        try:
+            response = self.model.generate_content(prompt)
+            batch_text = response.text
+        except Exception as exc:
+            message = self._format_model_error(exc)
+            logger.error(f"Batch entity extraction failed: {message}")
+            raise EntityExtractionError(message) from exc
+
+        parsed_entities = self._parse_batch_entities(batch_text, confidence_threshold)
+        stored_results: Dict[UUID, List[Dict[str, Any]]] = {}
+
+        for payload in chunk_payloads:
+            chunk_id = payload["chunk_id"]
+            chunk_entities = parsed_entities.get(str(chunk_id), [])
+            stored_results[chunk_id] = await self._store_entities(chunk_id, chunk_entities)
+
+        logger.info(f"Batch extracted entities for {len(chunk_payloads)} chunks")
+        return stored_results
 
     def _create_extraction_prompt(self, text: str) -> str:
         """Create prompt for entity extraction."""
@@ -106,40 +143,154 @@ EXTRACTED ENTITIES (JSON only):"""
 
         return prompt
 
+    def _create_batch_prompt(self, chunks: Sequence[Dict[str, Any]]) -> str:
+        """Create prompt for batched entity extraction."""
+        entity_types = "\n".join([
+            f"- {et.value}: {desc}"
+            for et, desc in ENTITY_TYPE_DESCRIPTIONS.items()
+        ])
+
+        chunk_sections = []
+        for chunk in chunks:
+            chunk_id = chunk["chunk_id"]
+            chunk_text = chunk.get("chunk_text") or ""
+            chunk_sections.append(
+                f"CHUNK ID: {chunk_id}\nTEXT:\n{chunk_text}\n"
+            )
+
+        chunk_text_block = "\n".join(chunk_sections)
+        prompt = f"""You are an expert ML/DL entity extractor. Analyze each chunk independently and extract entities using the schema below.
+
+ENTITY TYPES:
+{entity_types}
+
+INSTRUCTIONS:
+1. Process each chunk separately. Do not merge information between chunks.
+2. For each chunk, return a JSON object with:
+   - chunk_id: The chunk ID provided
+   - entities: List of entities following the single chunk schema (name, type, confidence, description)
+3. Respond ONLY with valid JSON array. Example:
+[
+  {{
+    "chunk_id": "chunk-123",
+    "entities": [{{"name": "ResNet", "type": "MODEL", "confidence": 0.95, "description": "CNN architecture"}}]
+  }},
+  {{
+    "chunk_id": "chunk-456",
+    "entities": []
+  }}
+]
+
+CHUNKS:
+{chunk_text_block}
+
+JSON RESPONSE:
+"""
+        return prompt
+
     def _parse_entities(self, entities_text: str, confidence_threshold: float) -> List[Dict]:
         """Parse entities from LLM response."""
-        import json
-        import re
+        raw_entities = self._extract_json_array(entities_text)
+        return self._filter_entities(raw_entities, confidence_threshold)
+
+    def _parse_batch_entities(
+        self,
+        batch_text: str,
+        confidence_threshold: float
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Parse batched entities keyed by chunk ID."""
+        raw_entries = self._extract_json_array(batch_text)
+        chunk_entities: Dict[str, List[Dict[str, Any]]] = {}
+
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            chunk_id = entry.get("chunk_id") or entry.get("chunkId")
+            if not chunk_id:
+                continue
+            entities = entry.get("entities", [])
+            chunk_entities[str(chunk_id)] = self._filter_entities(entities, confidence_threshold)
+
+        return chunk_entities
+
+    def _extract_json_array(self, text: str) -> List[Any]:
+        """Extract JSON array from Gemini response."""
+        if not text:
+            return []
+
+        json_match = re.search(r'\[.*\]', text, re.DOTALL)
+        if not json_match:
+            logger.warning("Gemini response did not contain JSON array")
+            return []
 
         try:
-            # Try to extract JSON from response
-            json_match = re.search(r'\[.*\]', entities_text, re.DOTALL)
-            if json_match:
-                entities_json = json_match.group(0)
-                entities = json.loads(entities_json)
-
-                # Filter by confidence and validate entity types
-                valid_entities = []
-                for entity in entities:
-                    if entity.get('confidence', 0) >= confidence_threshold:
-                        # Validate entity type
-                        entity_type = entity.get('type', '').upper()
-                        if entity_type in [et.value for et in EntityType]:
-                            valid_entities.append({
-                                'name': entity['name'],
-                                'type': entity_type,
-                                'confidence': entity['confidence'],
-                                'metadata': {
-                                    'description': entity.get('description', '')
-                                }
-                            })
-
-                return valid_entities
-
-        except Exception as e:
-            logger.error(f"Error parsing entities: {e}")
+            data = json.loads(json_match.group(0))
+            if isinstance(data, list):
+                return data
+            logger.warning("Expected JSON array in Gemini response but received %s", type(data))
+        except json.JSONDecodeError as exc:
+            logger.error(f"Unable to decode Gemini response as JSON: {exc}")
 
         return []
+
+    def _filter_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        confidence_threshold: float
+    ) -> List[Dict[str, Any]]:
+        """Filter and normalize entity objects."""
+        if not entities:
+            return []
+
+        valid_entities: List[Dict[str, Any]] = []
+        for entity in entities:
+            name = entity.get('name')
+            if not name:
+                continue
+
+            try:
+                confidence = float(entity.get('confidence', 0))
+            except (TypeError, ValueError):
+                confidence = 0.0
+
+            if confidence < confidence_threshold:
+                continue
+
+            entity_type = str(entity.get('type', '')).upper()
+            if entity_type not in self.valid_entity_types:
+                continue
+
+            valid_entities.append({
+                'name': name,
+                'type': entity_type,
+                'confidence': confidence,
+                'metadata': {
+                    'description': entity.get('description', '')
+                }
+            })
+
+        return valid_entities
+
+    async def _store_entities(
+        self,
+        chunk_id: UUID,
+        entities: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Persist entities for a chunk and attach IDs."""
+        stored_entities: List[Dict[str, Any]] = []
+        for entity_data in entities:
+            entity_id = await self._store_entity(
+                chunk_id=chunk_id,
+                entity_name=entity_data['name'],
+                entity_type=entity_data['type'],
+                confidence=entity_data['confidence'],
+                metadata=entity_data.get('metadata', {})
+            )
+            stored_entities.append({
+                'entity_id': entity_id,
+                **entity_data
+            })
+        return stored_entities
 
     async def _store_entity(
         self,
@@ -206,6 +357,17 @@ EXTRACTED ENTITIES (JSON only):"""
             )
 
             return entity_id
+
+    def _format_model_error(self, error: Exception) -> str:
+        """Provide human readable Gemini error message."""
+        message = str(error)
+        lower_message = message.lower()
+
+        quota_terms = ("quota", "exceed", "exhaust", "rate limit", "429")
+        if any(term in lower_message for term in quota_terms):
+            return f"Gemini quota or rate limit exceeded: {message}"
+
+        return f"Gemini entity extraction failed: {message}"
 
     async def get_entities_by_chunk(self, chunk_id: UUID) -> List[Dict]:
         """Get all entities extracted from a chunk."""

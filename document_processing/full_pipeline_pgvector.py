@@ -56,6 +56,7 @@ DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_CHUNKING_SIMILARITY = 0.5
 ALLOWED_CONTENT_TYPES = [
     'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
+GEMINI_MODEL = os.getenv('GEMINI_MODEL')
 
 app = FastAPI(title="pgvector RAG API", version="1.0.0")
 
@@ -97,7 +98,7 @@ class AppConfig:
             try:
                 # Configure Pydantic AI Agent with GoogleProvider
                 provider = GoogleProvider(api_key=gemini_key)
-                model = GoogleModel('gemini-2.5-flash', provider=provider)
+                model = GoogleModel(GEMINI_MODEL, provider=provider)
 
                 # Create agent with system prompt and output type
                 agent = Agent(
@@ -284,7 +285,7 @@ Sources used: {sources_used}"""
                     confidence=0.8,
                     word_count=len(answer_text.split()),
                     sources_used=sources_used,
-                    metadata={"method": "pydantic_ai_agent_fallback", "model": "gemini-2.5-flash"}
+                    metadata={"method": "pydantic_ai_agent_fallback", "model": GEMINI_MODEL}
                 )
 
         except Exception as llm_error:
@@ -537,9 +538,12 @@ async def upload_and_process(
 
                         entities_extracted = extraction_result['total_entities']
                         relationships_extracted = extraction_result['total_relationships']
+                        extraction_failed = extraction_result['failed'] > 0
+                        status_icon = "✅" if not extraction_failed else "⚠️"
+                        status_text = "ENTITY EXTRACTION COMPLETE" if not extraction_failed else "ENTITY EXTRACTION COMPLETED WITH ERRORS"
 
                         print(f"\n{'='*70}")
-                        print(f"✅ ENTITY EXTRACTION COMPLETE")
+                        print(f"{status_icon} {status_text}")
                         print(f"{'='*70}")
                         print(f"Document ID: {processed_id[:8]}...")
                         print(f"Entities extracted: {entities_extracted}")
@@ -548,7 +552,8 @@ async def upload_and_process(
                         print(f"Chunks failed: {extraction_result['failed']}")
                         print(f"{'='*70}\n")
 
-                        logfire.info("Entity extraction completed successfully",
+                        log_writer = logfire.info if not extraction_failed else logfire.warning
+                        log_writer("Entity extraction completed",
                                    document_id=processed_id,
                                    filename=file.filename,
                                    entities_extracted=entities_extracted,
