@@ -14,10 +14,10 @@ import google.generativeai as genai
 from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
-from file_validator import FileValidator, FileValidationConfig
-from embed_chunks_to_db import ChunkEmbeddingPipeline
-from reranker import Reranker
-from templates import (
+from document_processing.file_validator import FileValidator, FileValidationConfig
+from document_processing.embed_chunks_to_db import ChunkEmbeddingPipeline
+from document_processing.reranker import Reranker
+from document_processing.templates import (
     HOME_PAGE_HTML,
     SEARCH_RESULTS_HTML,
     SEARCH_ERROR_HTML,
@@ -29,11 +29,19 @@ from templates import (
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import HTMLResponse
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 
 # Configuration setup
 script_dir = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(script_dir, '../deployment/.env'))
+env_path = os.path.join(script_dir, '../deployment/.env')
+load_dotenv(env_path)
+
+# Docker compose injects empty strings when variables aren't defined, so reapply
+# values from the env file for any unset/blank environment variables.
+if os.path.exists(env_path):
+    for key, value in dotenv_values(env_path).items():
+        if (os.getenv(key) in (None, "")) and value is not None:
+            os.environ[key] = value
 
 # Add project root to path for models
 project_root = Path(__file__).parent.parent
@@ -64,9 +72,11 @@ class AppConfig:
             print("⚠️ LOGFIRE_WRITE_TOKEN not found, using default configuration")
             logfire.configure()
 
+        db_host = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or 'localhost'
+        db_port = os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or '5432'
         self.db_params = {
-            'host': os.getenv('DB_HOST', 'localhost'),
-            'port': os.getenv('DB_PORT', '5432'),
+            'host': db_host,
+            'port': db_port,
             'dbname': os.getenv('POSTGRES_DB', 'rag_db'),
             'user': os.getenv('POSTGRES_USER', 'admin'),
             'password': os.getenv('POSTGRES_PASSWORD', 'admin')

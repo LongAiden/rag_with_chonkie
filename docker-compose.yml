@@ -9,6 +9,14 @@ services:
       context: .
       dockerfile: deployment/Dockerfile.postgres
     container_name: rag_postgres
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          cpus: "2.0"
+          memory: 4G
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-rag_db}
       POSTGRES_USER: ${POSTGRES_USER:-admin}
@@ -38,6 +46,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: rag_app
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          cpus: "2.0"
+          memory: 4G
     environment:
       # Database connection
       POSTGRES_HOST: postgres
@@ -48,9 +64,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-rag_db}
 
       # API Keys
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      LOGFIRE_WRITE_TOKEN: ${LOGFIRE_WRITE_TOKEN}
-      LOGFIRE_READ_TOKEN: ${LOGFIRE_READ_TOKEN}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LOGFIRE_WRITE_TOKEN: ${LOGFIRE_WRITE_TOKEN:-}
+      LOGFIRE_READ_TOKEN: ${LOGFIRE_READ_TOKEN:-}
 
       # Graph Configuration
       ENTITY_CONFIDENCE_THRESHOLD: ${ENTITY_CONFIDENCE_THRESHOLD:-0.6}

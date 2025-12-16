@@ -6,6 +6,7 @@
 -- Enable required PostgreSQL extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "vector";
+CREATE EXTENSION IF NOT EXISTS "postgis";  -- Required by pgrouting
 CREATE EXTENSION IF NOT EXISTS "pgrouting";
 
 -- ============================================

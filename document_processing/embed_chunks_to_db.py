@@ -1,4 +1,3 @@
-import sys
 import os
 import json
 import uuid
@@ -13,10 +12,7 @@ from sentence_transformers import SentenceTransformer
 
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from chunk_pdf_with_chonkie import process_document
-
-# Import your existing chunking functions
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from document_processing.chunk_pdf_with_chonkie import process_document
 
 
 @dataclass
