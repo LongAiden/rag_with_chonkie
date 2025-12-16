@@ -95,14 +95,14 @@ PAGERANK_DAMPING_FACTOR=0.85
 
 # LLM
 GOOGLE_API_KEY=your-api-key
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash   # override to switch Gemini tier
 
 # Embedding
 ENTITY_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ENTITY_EMBEDDING_DIMENSION=384
 
 # Performance
-BATCH_SIZE=10
+BATCH_SIZE=10                   # batched Gemini calls per request
 ENABLE_PARALLEL_EXTRACTION=true
 ENABLE_ENTITY_CACHING=true
 CACHE_TTL_SECONDS=3600
@@ -112,6 +112,29 @@ LOG_LEVEL=INFO
 LOG_ENTITY_EXTRACTION=true
 LOG_RELATIONSHIP_EXTRACTION=true
 ```
+
+---
+
+## ⚡️ New Batched Entity Extraction Flow
+
+Entity/relationship extraction no longer fires one Gemini request per chunk. The
+`ExtractionService` now:
+
+1. Uses `BATCH_SIZE` (default 10) to bundle chunks into a single prompt.
+2. Pulls both `GOOGLE_API_KEY` and `GEMINI_MODEL` from the environment through
+   [`GraphConfig`](config/graph_config.py), so switching to a higher (paid) tier
+   is just an env change—no code edits.
+3. Persists Gemini failures as **errors** rather than silent successes; quota or
+   rate-limit responses surface in the upload logs so you know extraction was
+   skipped.
+
+**Impacts**
+- Dramatically reduces daily Gemini request count (≈1 request per batch instead
+  of per chunk), helping you stay under Free Tier quotas.
+- Relationship extraction still runs per chunk but only after successful batch
+  entity extraction.
+Tune batching via `.env` and monitor the console output—the upload summary now
+reports how many chunks succeeded/failed in each extraction pass.
 
 ---
 

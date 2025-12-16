@@ -23,11 +23,11 @@ This file contains the `GraphConfig` class with all configurable parameters for:
 ```python
 from config import graph_config, get_graph_config
 
-# Access settings directly
+# Access settings directly (singleton cached in module)
 threshold = graph_config.entity_confidence_threshold
-model = graph_config.gemini_model
+model = graph_config.gemini_model  # sourced from GEMINI_MODEL env when set
 
-# Or get fresh instance
+# Or get fresh instance (returns the same singleton)
 config = get_graph_config()
 ```
 
@@ -41,6 +41,7 @@ from graph_processing import EntityExtractor
 extractor = EntityExtractor(
     db_pool=pool,
     gemini_api_key=graph_config.gemini_api_key,
+    gemini_model=graph_config.gemini_model,
     embedding_model=embedding_model
 )
 
@@ -96,8 +97,8 @@ if is_relationship_type_enabled("USES"):
 ### LLM Configuration
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `gemini_api_key` | from env | Gemini API key |
-| `gemini_model` | gemini-2.5-flash | Gemini model name |
+| `gemini_api_key` | from env (`GOOGLE_API_KEY`) | Gemini API key |
+| `gemini_model` | `.env` `GEMINI_MODEL` or `gemini-2.5-flash` | Gemini model name |
 
 ### Embedding Configuration
 | Parameter | Default | Description |
@@ -108,7 +109,7 @@ if is_relationship_type_enabled("USES"):
 ### Performance
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `batch_size` | 10 | Batch processing size |
+| `batch_size` | 10 | Number of chunks per Gemini request |
 | `enable_parallel_extraction` | true | Parallel processing |
 | `enable_entity_caching` | true | Cache entity lookups |
 | `cache_ttl_seconds` | 3600 | Cache TTL (1 hour) |
@@ -188,10 +189,13 @@ enabled_entity_types: List[str] = Field(
 
 ### 3. Increase Batch Size for Faster Processing
 
+Entity extraction now uses Gemini batches instead of one-call-per-chunk. Raising
+the batch size lowers API calls while increasing token usage:
+
 ```bash
 # .env
 BATCH_SIZE=20
-ENABLE_PARALLEL_EXTRACTION=true
+GEMINI_MODEL=gemini-1.5-pro-exp   # optional: switch tiers when increasing batch size
 ```
 
 ### 4. Debug Mode
@@ -238,6 +242,22 @@ if is_relationship_type_enabled("TRAINED_ON"):
     # TRAINED_ON type is enabled
     pass
 ```
+
+## Batched Entity Extraction Flow
+
+`GraphConfig.batch_size`, `gemini_api_key`, and `gemini_model` are consumed by
+`graph_processing.extraction_service.ExtractionService`. During uploads (and in
+the migration script) the service:
+
+1. Builds multi-chunk prompts of size `BATCH_SIZE` so a single Gemini request
+   extracts entities for the entire group.
+2. Parses the JSON response per chunk and persists entities before attempting
+   relationships.
+3. Raises `EntityExtractionError` when Gemini quota/rate limits are hit so the
+   upload log shows a warning instead of silently returning zero entities.
+
+Tune `BATCH_SIZE` to balance throughput and prompt size. For higher limits,
+point `GEMINI_MODEL` at a paid tier without touching any code.
 
 ## Best Practices
 

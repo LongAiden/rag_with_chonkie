@@ -161,6 +161,14 @@ POST /graph/extract/batch
 }
 ```
 
+> 💡 **Batched Gemini Calls**
+>
+> The backend automatically groups chunk IDs using the `BATCH_SIZE` value from
+> [`GraphConfig`](config/graph_config.py). Even if you pass hundreds of chunk
+> IDs, Gemini only receives ~`len(chunk_ids) / BATCH_SIZE` requests, which keeps
+> Free Tier quotas happy. Tune `BATCH_SIZE` and `GEMINI_MODEL` in `.env`
+> to control the balance between throughput and token usage.
+
 **Response:**
 ```json
 {

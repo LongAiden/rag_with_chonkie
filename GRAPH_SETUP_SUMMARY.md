@@ -108,6 +108,8 @@ psql -h localhost -U your_user -d your_database -f migrations/001_create_graph_t
 - Automatic deduplication of entities
 - Vector embeddings for semantic search
 - Chunk reference tracking
+- Batch-friendly prompts driven by `BATCH_SIZE` to minimize Gemini calls
+- Environment-driven Gemini configuration (`GOOGLE_API_KEY` + `GEMINI_MODEL`) with quota-aware error handling
 
 #### [graph_processing/relationship_extraction.py](graph_processing/relationship_extraction.py)
 **Class**: `RelationshipExtractor`
@@ -121,6 +123,7 @@ psql -h localhost -U your_user -d your_database -f migrations/001_create_graph_t
 - Context-aware relationship extraction
 - Confidence-based filtering
 - Automatic edge creation (via database trigger)
+- Shares the same env-configured Gemini model as the entity extractor for consistency
 
 #### [graph_processing/graph_service.py](graph_processing/graph_service.py)
 **Class**: `GraphService`
@@ -136,6 +139,20 @@ psql -h localhost -U your_user -d your_database -f migrations/001_create_graph_t
 - pgRouting integration for high-performance graph algorithms
 - Bidirectional path finding
 - Cost-based routing (lower confidence = higher cost)
+
+#### [graph_processing/extraction_service.py](graph_processing/extraction_service.py)
+**Class**: `ExtractionService`
+
+**Role**:
+- Coordinates entity + relationship extraction for chunks/documents
+- Batches Gemini calls using `GraphConfig.batch_size` to control quota usage
+- Surfaces `EntityExtractionError` when the LLM returns quota/rate-limit issues so uploads log warnings instead of silent zeros
+
+**Flow**:
+1. Load Gemini settings (`GOOGLE_API_KEY`, `GEMINI_MODEL`) and `BATCH_SIZE` from [`GraphConfig`](config/graph_config.py).
+2. Group chunk text into batch prompts and call Gemini once per batch.
+3. Persist entities, then optionally extract relationships per chunk.
+4. Return success/failed chunk counts so the upload summary reflects skipped chunks.
 
 ---
 
