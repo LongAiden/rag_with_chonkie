@@ -1,8 +1,9 @@
 # Core ML Stack - Version Pinned for Stability
-numpy>=1.21.0,<2.0 
+numpy>=1.21.0,<2.0
 scipy>=1.10.0,<1.12.0
-torch>=2.0.0,<2.5.0
-torchvision>=0.15.0,<0.20.0
+# CPU wheels avoid downloading large CUDA artifacts during image builds
+torch==2.3.1+cpu
+torchvision==0.18.1+cpu
 sentence-transformers>=2.2.0
 
 # Vector Database & SQL

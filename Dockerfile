@@ -11,7 +11,6 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies
@@ -27,9 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first for better caching
 COPY deployment/requirements.txt /app/requirements.txt
 
-# Install Python dependencies
+# Install Python dependencies (reuse pip cache between builds)
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 # Download spaCy model (optional, uncomment if using spaCy NER)
 # RUN python -m spacy download en_core_web_sm
