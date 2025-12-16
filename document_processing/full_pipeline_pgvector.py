@@ -17,6 +17,7 @@ from pydantic_ai.providers.google import GoogleProvider
 from document_processing.file_validator import FileValidator, FileValidationConfig
 from document_processing.embed_chunks_to_db import ChunkEmbeddingPipeline
 from document_processing.reranker import Reranker
+from graph_processing.extraction_service import create_extraction_service
 from document_processing.templates import (
     HOME_PAGE_HTML,
     SEARCH_RESULTS_HTML,
@@ -57,6 +58,10 @@ ALLOWED_CONTENT_TYPES = [
     'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
 
 app = FastAPI(title="pgvector RAG API", version="1.0.0")
+
+# Register graph routes
+from api.graph_routes import router as graph_router
+app.include_router(graph_router)
 
 # Global configuration
 
@@ -181,6 +186,23 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
         # Initialize the database for the new pipeline
         await config.pipeline.vector_store._initialize_database()
     return config.pipeline
+
+
+async def get_db_pool():
+    """Get database connection pool for graph operations."""
+    import asyncpg
+
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        # Construct from individual env vars
+        host = config.db_params['host']
+        port = config.db_params['port']
+        dbname = config.db_params['dbname']
+        user = config.db_params['user']
+        password = config.db_params['password']
+        db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+
+    return await asyncpg.create_pool(db_url, min_size=2, max_size=10)
 
 
 def get_reranker():
@@ -316,6 +338,7 @@ async def perform_document_search(query: str, limit: int, threshold: float, docu
 
         # Step 1.5: Apply BM25 reranking if we have enough results
         avg_rerank_score = None
+        reranking_enabled = False
 
         if len(results) > 5:
             reranking_enabled = True
@@ -471,11 +494,118 @@ async def upload_and_process(
                         document_id=processed_id,
                         filename=file.filename)
 
+            # Step: Extract entities and relationships from chunks
+            entities_extracted = 0
+            relationships_extracted = 0
+
+            try:
+                # Check if entity extraction is enabled
+                enable_extraction = os.getenv("ENABLE_ENTITY_EXTRACTION", "true").lower() == "true"
+
+                print(f"\n{'='*70}")
+                print(f"📊 ENTITY EXTRACTION CHECK")
+                print(f"{'='*70}")
+                print(f"Document ID: {processed_id}")
+                print(f"Extraction Enabled: {enable_extraction}")
+                print(f"{'='*70}\n")
+
+                if enable_extraction:
+                    with logfire.span("entity_extraction", document_id=processed_id):
+                        print(f"🚀 Starting entity extraction for document {processed_id[:8]}...")
+                        logfire.info("Starting entity extraction",
+                                   document_id=processed_id,
+                                   filename=file.filename)
+
+                        # Create extraction service
+                        print(f"🔧 Creating database connection pool...")
+                        pool = await get_db_pool()
+                        print(f"✓ Database pool created")
+
+                        print(f"🔧 Initializing extraction service...")
+                        extraction_service = await create_extraction_service(pool, table_name=table_name)
+                        print(f"✓ Extraction service initialized with table: {table_name}")
+
+                        # Extract from all chunks in this document
+                        print(f"🔍 Extracting entities and relationships from chunks...")
+                        logfire.info("Beginning entity extraction from chunks",
+                                   document_id=processed_id)
+
+                        extraction_result = await extraction_service.extract_from_document(
+                            document_id=uuid.UUID(processed_id),
+                            verbose=False
+                        )
+
+                        entities_extracted = extraction_result['total_entities']
+                        relationships_extracted = extraction_result['total_relationships']
+
+                        print(f"\n{'='*70}")
+                        print(f"✅ ENTITY EXTRACTION COMPLETE")
+                        print(f"{'='*70}")
+                        print(f"Document ID: {processed_id[:8]}...")
+                        print(f"Entities extracted: {entities_extracted}")
+                        print(f"Relationships extracted: {relationships_extracted}")
+                        print(f"Chunks processed: {extraction_result['successful']}/{extraction_result['total_chunks']}")
+                        print(f"Chunks failed: {extraction_result['failed']}")
+                        print(f"{'='*70}\n")
+
+                        logfire.info("Entity extraction completed successfully",
+                                   document_id=processed_id,
+                                   filename=file.filename,
+                                   entities_extracted=entities_extracted,
+                                   relationships_extracted=relationships_extracted,
+                                   chunks_successful=extraction_result['successful'],
+                                   chunks_failed=extraction_result['failed'],
+                                   total_chunks=extraction_result['total_chunks'])
+
+                        # Close the pool
+                        await pool.close()
+                        print(f"✓ Database pool closed")
+
+                else:
+                    print(f"⚠️  Entity extraction is DISABLED (ENABLE_ENTITY_EXTRACTION=false)")
+                    logfire.info("Entity extraction disabled",
+                               document_id=processed_id,
+                               env_value=os.getenv("ENABLE_ENTITY_EXTRACTION"))
+
+            except Exception as e:
+                # Don't fail upload if entity extraction fails
+                print(f"\n{'='*70}")
+                print(f"❌ ENTITY EXTRACTION FAILED")
+                print(f"{'='*70}")
+                print(f"Document ID: {processed_id[:8]}...")
+                print(f"Error: {str(e)}")
+                print(f"Error Type: {type(e).__name__}")
+                print(f"{'='*70}\n")
+
+                logfire.error("Entity extraction failed",
+                            document_id=processed_id,
+                            filename=file.filename,
+                            error=str(e),
+                            error_type=type(e).__name__,
+                            traceback=True)
+
+        # Final completion log
+        print(f"\n{'='*70}")
+        print(f"✅ DOCUMENT UPLOAD COMPLETE")
+        print(f"{'='*70}")
+        print(f"Document ID: {processed_id}")
+        print(f"Filename: {file.filename}")
+        print(f"Entities: {entities_extracted}")
+        print(f"Relationships: {relationships_extracted}")
+        print(f"{'='*70}\n")
+
+        logfire.info("Upload and processing pipeline completed",
+                   document_id=processed_id,
+                   filename=file.filename,
+                   entities_extracted=entities_extracted,
+                   relationships_extracted=relationships_extracted,
+                   status="success")
+
         return UploadResponse(
             status="success",
             document_id=processed_id,
             filename=file.filename,
-            message=f"Document processed successfully",
+            message=f"Document processed successfully. Extracted {entities_extracted} entities and {relationships_extracted} relationships.",
             chunks_created=None
         )
 
@@ -558,24 +688,98 @@ async def query_documents_form(
 
 @app.get("/stats", response_class=HTMLResponse)
 async def get_database_stats():
-    """Get database statistics and collection information"""
+    """Get database statistics from ALL chunk tables"""
     try:
+        # Get default pipeline for connection
         pipeline = await get_pipeline()
-        stats = await pipeline.get_stats()
+        conn = await pipeline.vector_store._get_connection()
 
-        # Use template with substitutions
-        return STATS_PAGE_HTML.format(
-            total_documents=f"{stats['total_documents']:,}",
-            total_chunks=f"{stats['total_chunks']:,}",
-            avg_text_length=f"{stats['avg_text_length']:.0f}",
-            avg_chunks_per_doc=f"{stats['total_chunks'] // max(stats['total_documents'], 1):.0f}",
-            embedding_model=pipeline.embedding_generator.model_name,
-            embedding_dim=pipeline.embedding_generator.embedding_dim,
-            table_name=pipeline.vector_store.table_name,
-            earliest_chunk=stats['earliest_chunk'] or 'No documents yet',
-            latest_chunk=stats['latest_chunk'] or 'No documents yet'
-        )
+        try:
+            # Find all tables with chunk structure (id, document_id, text, embedding columns)
+            tables = await conn.fetch("""
+                SELECT DISTINCT t1.table_name
+                FROM information_schema.columns t1
+                WHERE t1.table_schema = 'public'
+                AND t1.column_name = 'document_id'
+                AND EXISTS (
+                    SELECT 1 FROM information_schema.columns t2
+                    WHERE t2.table_name = t1.table_name
+                    AND t2.table_schema = 'public'
+                    AND t2.column_name = 'embedding'
+                )
+                AND t1.table_name NOT IN ('entities', 'relationships', 'entity_nodes', 'entity_edges')
+                ORDER BY t1.table_name
+            """)
+
+            table_names = [row['table_name'] for row in tables]
+
+            print(f"\n📊 Found chunk tables: {', '.join(table_names) if table_names else 'none'}")
+
+            if not table_names:
+                # No chunk tables found, use default
+                stats = await pipeline.get_stats()
+                table_display = pipeline.vector_store.table_name
+            else:
+                # Aggregate stats from all chunk tables
+                total_docs = 0
+                total_chunks = 0
+                total_text_length = 0
+                earliest = None
+                latest = None
+
+                for table_name in table_names:
+                    result = await conn.fetchrow(f"""
+                        SELECT
+                            COUNT(DISTINCT document_id) as docs,
+                            COUNT(*) as chunks,
+                            COALESCE(SUM(LENGTH(text)), 0) as total_length,
+                            MIN(created_at) as earliest,
+                            MAX(created_at) as latest
+                        FROM {table_name}
+                    """)
+
+                    total_docs += result['docs'] or 0
+                    total_chunks += result['chunks'] or 0
+                    total_text_length += result['total_length'] or 0
+
+                    print(f"  {table_name}: {result['docs']} docs, {result['chunks']} chunks")
+
+                    if result['earliest'] and (earliest is None or result['earliest'] < earliest):
+                        earliest = result['earliest']
+                    if result['latest'] and (latest is None or result['latest'] > latest):
+                        latest = result['latest']
+
+                stats = {
+                    'total_documents': total_docs,
+                    'total_chunks': total_chunks,
+                    'avg_text_length': total_text_length / total_chunks if total_chunks > 0 else 0,
+                    'earliest_chunk': earliest,
+                    'latest_chunk': latest
+                }
+
+                table_display = f"ALL TABLES ({len(table_names)} tables)"
+                print(f"📊 TOTAL: {total_docs} documents, {total_chunks} chunks\n")
+
+            # Use template with substitutions
+            return STATS_PAGE_HTML.format(
+                total_documents=f"{stats['total_documents']:,}",
+                total_chunks=f"{stats['total_chunks']:,}",
+                avg_text_length=f"{stats['avg_text_length']:.0f}",
+                avg_chunks_per_doc=f"{stats['total_chunks'] // max(stats['total_documents'], 1):.0f}",
+                embedding_model=pipeline.embedding_generator.model_name,
+                embedding_dim=pipeline.embedding_generator.embedding_dim,
+                table_name=table_display,
+                earliest_chunk=str(stats['earliest_chunk']) if stats['earliest_chunk'] else 'No documents yet',
+                latest_chunk=str(stats['latest_chunk']) if stats['latest_chunk'] else 'No documents yet'
+            )
+
+        finally:
+            await conn.close()
+
     except Exception as e:
+        print(f"❌ Stats error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return STATS_ERROR_HTML.format(error_message=str(e))
 
 
