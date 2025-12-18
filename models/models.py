@@ -62,6 +62,10 @@ class RAGSource(BaseModel):
         default_factory=dict, description="Additional source metadata")
     rerank_score: Optional[float] = Field(
         None, description="Reranking score from cross-encoder model")
+    graph_entities: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Entities associated with this chunk from the knowledge graph"
+    )
 
 
 class RAGResponseMetadata(BaseModel):

@@ -1,6 +1,7 @@
 import os
 import sys
 import uuid
+import json
 import numpy as np
 from pathlib import Path
 from typing import List, Dict
@@ -91,6 +92,7 @@ class AppConfig:
         self.agent = self._configure_pydantic_ai()
         self.pipeline = None
         self.reranker = None  # Lazy initialization to avoid startup overhead
+        self.graph_pool = None
 
     def _configure_pydantic_ai(self):
         gemini_key = os.getenv('GOOGLE_API_KEY')
@@ -190,12 +192,14 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
 
 
 async def get_db_pool():
-    """Get database connection pool for graph operations."""
+    """Get or create the shared asyncpg connection pool."""
     import asyncpg
+
+    if getattr(config, "graph_pool", None) and not config.graph_pool._closed:
+        return config.graph_pool
 
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
-        # Construct from individual env vars
         host = config.db_params['host']
         port = config.db_params['port']
         dbname = config.db_params['dbname']
@@ -203,7 +207,8 @@ async def get_db_pool():
         password = config.db_params['password']
         db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
-    return await asyncpg.create_pool(db_url, min_size=2, max_size=10)
+    config.graph_pool = await asyncpg.create_pool(db_url, min_size=2, max_size=10)
+    return config.graph_pool
 
 
 def get_reranker():
@@ -214,6 +219,88 @@ def get_reranker():
         config.reranker = Reranker(model_name=rerank_model)
         print(f"✓ Reranker initialized with model: {rerank_model}")
     return config.reranker
+
+
+async def fetch_graph_entities_for_chunks(chunk_ids: List[str], per_chunk: int = 3) -> Dict[str, List[Dict]]:
+    """
+    Fetch top entities linked to each chunk from the knowledge graph.
+    Returns mapping of chunk_id -> list of entity dicts.
+    """
+    valid_chunk_ids = []
+    for chunk_id in chunk_ids:
+        try:
+            valid_chunk_ids.append(uuid.UUID(str(chunk_id)))
+        except (TypeError, ValueError):
+            continue
+
+    if not valid_chunk_ids:
+        return {}
+
+    try:
+        pool = await get_db_pool()
+    except Exception as pool_error:
+        logfire.warn("Graph pool unavailable, skipping entity enrichment",
+                     error=str(pool_error))
+        return {}
+
+    query = """
+        WITH entity_chunk AS (
+            SELECT
+                entity_id,
+                entity_name,
+                entity_type,
+                confidence,
+                metadata,
+                unnest(source_chunk_ids) AS chunk_id
+            FROM entities
+            WHERE source_chunk_ids && $1::uuid[]
+        )
+        SELECT entity_id,
+               entity_name,
+               entity_type,
+               confidence,
+               metadata,
+               chunk_id
+        FROM (
+            SELECT entity_id,
+                   entity_name,
+                   entity_type,
+                   confidence,
+                   metadata,
+                   chunk_id,
+                   ROW_NUMBER() OVER (PARTITION BY chunk_id ORDER BY confidence DESC) AS rn
+            FROM entity_chunk
+        ) ranked
+        WHERE rn <= $2
+    """
+
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, valid_chunk_ids, per_chunk)
+    except Exception as graph_error:
+        logfire.error("Graph enrichment query failed", error=str(graph_error))
+        return {}
+
+    entity_map: Dict[str, List[Dict]] = {}
+    for row in rows:
+        metadata = row['metadata']
+        if metadata and not isinstance(metadata, dict):
+            try:
+                metadata = json.loads(metadata)
+            except (TypeError, ValueError):
+                metadata = {}
+
+        entity_info = {
+            'entity_id': str(row['entity_id']),
+            'name': row['entity_name'],
+            'type': row['entity_type'],
+            'confidence': float(row['confidence']) if row['confidence'] is not None else None,
+            'description': metadata.get('description') if isinstance(metadata, dict) else None
+        }
+        chunk_key = str(row['chunk_id'])
+        entity_map.setdefault(chunk_key, []).append(entity_info)
+
+    return entity_map
 
 
 def validate_upload_params(chunk_size: int, content_type: str):
@@ -381,16 +468,43 @@ async def perform_document_search(query: str, limit: int, threshold: float, docu
                 table_used=table_name
             )
 
-        # Step 2: Build context from retrieved chunks with page numbers
+        # Step 2: Enrich results with knowledge graph entities
+        chunk_ids = [r.get('chunk_id') for r in results if r.get('chunk_id')]
+        graph_entities_map = await fetch_graph_entities_for_chunks(chunk_ids)
+
+        for result in results:
+            graph_entities = graph_entities_map.get(result.get('chunk_id', ''), [])
+            if graph_entities:
+                metadata = result.get('metadata') or {}
+                metadata['graph_entities'] = graph_entities
+                result['metadata'] = metadata
+                result['graph_entities'] = graph_entities
+
+        # Step 3: Build context from retrieved chunks with page numbers + graph info
         context_parts = []
         for i, result in enumerate(results):
             page_info = ""
             if result.get('metadata') and result['metadata'].get('page_number'):
                 page_info = f" (Page {result['metadata']['page_number']})"
-            context_parts.append(f"[Source {i+1}{page_info}]: {result['text']}")
+            context_parts.append(
+                f"[Source {i+1}{page_info}]: {result['text']}")
+
+        # Add graph entity information to context BEFORE joining
+        for i, result in enumerate(results):
+            if result.get('graph_entities'):
+                entity_summary = ", ".join(
+                    f"{entity['name']} ({entity['type']})"
+                    for entity in result['graph_entities']
+                )
+                if entity_summary:
+                    context_parts.append(
+                        f"[Graph Entities for Source {i+1}]: {entity_summary}"
+                    )
+
+        # Create final context string AFTER all parts are added
         context = "\n\n".join(context_parts)
 
-        # Step 3: Generate response with LLM
+        # Step 4: Generate response with LLM (now includes graph entities)
         llm_response = await generate_llm_response(query, context, results)
 
         # Calculate search statistics
@@ -408,7 +522,8 @@ async def perform_document_search(query: str, limit: int, threshold: float, docu
                     document_id=r['document_id'],
                     page_number=r.get('metadata', {}).get('page_number'),
                     metadata=r.get('metadata', {}),
-                    rerank_score=round(r['rerank_score'], 3) if 'rerank_score' in r else None
+                    rerank_score=round(r['rerank_score'], 3) if 'rerank_score' in r else None,
+                    graph_entities=r.get('graph_entities', [])
                 ) for r in results
             ],
             search_stats=RAGResponseMetadata(

@@ -2,49 +2,69 @@
 # RAG + Knowledge Graph Application Dockerfile
 # ============================================
 
-# Use Python 3.11 slim image for smaller size
-FROM python:3.11-slim
+# Stage 1: build Python environment with cached dependencies
+FROM python:3.11-slim AS builder
 
-# Set working directory
-WORKDIR /app
-
-# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    g++ \
-    git \
-    curl \
-    libpq-dev \
+# Install build deps once in builder
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        g++ \
+        git \
+        curl \
+        libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY deployment/requirements.txt /app/requirements.txt
+RUN python -m venv $VIRTUAL_ENV
 
-# Install Python dependencies (reuse pip cache between builds)
-RUN pip install --upgrade pip && \
+WORKDIR /build
+COPY deployment/requirements.txt .
+
+# Cache pip downloads between builds for faster Windows/WSL iterations
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
     pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
-# Download spaCy model (optional, uncomment if using spaCy NER)
-# RUN python -m spacy download en_core_web_sm
+# Stage 2: runtime image stays lean
+FROM python:3.11-slim
 
-# Copy application code
-COPY . /app/
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
-# Create necessary directories
+WORKDIR /app
+
+# Runtime dependencies only (no compilers)
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy prebuilt virtualenv from builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy application code last to maximize cache hits
+COPY . .
+
+# Required directories for runtime state
 RUN mkdir -p /app/data /app/logs /app/uploads
 
-# Expose port
 EXPOSE 8000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "document_processing.full_pipeline_pgvector:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Use reload only in dev-compose; production image stays leaner
+CMD ["uvicorn", "document_processing.full_pipeline_pgvector:app", "--host", "0.0.0.0", "--port", "8000"]
