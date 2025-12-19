@@ -51,3 +51,7 @@ python-dotenv>=1.0.0
 # Production Essentials (Add these)
 gunicorn>=21.2.0  # WSGI server for production
 logfire # For logging
+
+# Async task queue
+celery[redis]>=5.3.0
+redis>=5.0.0

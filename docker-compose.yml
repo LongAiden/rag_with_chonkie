@@ -39,6 +39,18 @@ services:
     restart: unless-stopped
 
   # ============================================
+  # Redis (Celery Broker/Backend)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - rag_network
+    restart: unless-stopped
+
+  # ============================================
   # RAG Application
   # ============================================
   app:
@@ -84,6 +96,11 @@ services:
 
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Celery broker/backend + optional FE password
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      USE_CELERY_FOR_EXTRACTION: ${USE_CELERY_FOR_EXTRACTION:-true}
+      APP_ACCESS_PASSWORD: ${APP_ACCESS_PASSWORD:-}
     ports:
       - "8000:8000"
     volumes:
@@ -96,6 +113,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - rag_network
     healthcheck:
@@ -104,6 +123,42 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
+
+  # ============================================
+  # Celery Worker
+  # ============================================
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag_celery_worker
+    command: celery -A worker.celery_app worker --loglevel=info
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-rag_db}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      ENABLE_ENTITY_EXTRACTION: ${ENABLE_ENTITY_EXTRACTION:-true}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      USE_CELERY_FOR_EXTRACTION: ${USE_CELERY_FOR_EXTRACTION:-true}
+    volumes:
+      - .:/app
+      - upload_data:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - rag_network
     restart: unless-stopped
 
   # ============================================

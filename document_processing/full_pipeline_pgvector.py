@@ -4,7 +4,7 @@ import uuid
 import json
 import numpy as np
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # Disable tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -29,7 +29,7 @@ from document_processing.templates import (
     HEALTH_ERROR_HTML
 )
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Header
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv, dotenv_values
 
@@ -317,6 +317,105 @@ def validate_upload_params(chunk_size: int, content_type: str):
         )
 
 
+def require_access_password(provided_password: Optional[str]):
+    """
+    Enforce a simple shared password for browser-facing forms when configured.
+    No-op if APP_ACCESS_PASSWORD/FRONTEND_PASSWORD is unset.
+    """
+    expected = os.getenv("APP_ACCESS_PASSWORD") or os.getenv("FRONTEND_PASSWORD")
+    expected = expected.strip() if expected else ""
+
+    if expected and provided_password != expected:
+        raise HTTPException(status_code=403, detail="Invalid access password")
+
+
+def celery_enabled() -> bool:
+    """Check whether Celery offloading is enabled."""
+    return os.getenv("USE_CELERY_FOR_EXTRACTION", "false").lower() == "true"
+
+
+def celery_upload_enabled() -> bool:
+    """Check whether uploads should be offloaded to Celery."""
+    return os.getenv("USE_CELERY_FOR_UPLOAD", "false").lower() == "true"
+
+
+async def run_entity_extraction_for_document(
+    document_id: str,
+    filename: Optional[str],
+    table_name: str,
+) -> Dict:
+    """
+    Shared entity extraction flow used by both API requests and Celery workers.
+    Returns a summary dict instead of raising so uploads are resilient.
+    """
+    enable_extraction = os.getenv("ENABLE_ENTITY_EXTRACTION", "true").lower() == "true"
+    if not enable_extraction:
+        logfire.info(
+            "Entity extraction disabled via configuration",
+            document_id=document_id,
+            table_name=table_name,
+        )
+        return {
+            "status": "disabled",
+            "entities_extracted": 0,
+            "relationships_extracted": 0,
+            "task_id": None,
+        }
+
+    pool = None
+    try:
+        pool = await get_db_pool()
+        extraction_service = await create_extraction_service(
+            pool, table_name=table_name)
+
+        extraction_result = await extraction_service.extract_from_document(
+            document_id=uuid.UUID(document_id),
+            verbose=False
+        )
+
+        entities_extracted = extraction_result['total_entities']
+        relationships_extracted = extraction_result['total_relationships']
+
+        logfire.info(
+            "Entity extraction completed",
+            document_id=document_id,
+            filename=filename,
+            entities_extracted=entities_extracted,
+            relationships_extracted=relationships_extracted,
+            chunks_successful=extraction_result.get('successful'),
+            chunks_failed=extraction_result.get('failed'),
+            total_chunks=extraction_result.get('total_chunks'),
+        )
+
+        return {
+            "status": "completed",
+            "entities_extracted": entities_extracted,
+            "relationships_extracted": relationships_extracted,
+            "chunks_successful": extraction_result.get('successful'),
+            "chunks_failed": extraction_result.get('failed'),
+            "task_id": None,
+        }
+
+    except Exception as e:
+        logfire.error(
+            "Entity extraction failed",
+            document_id=document_id,
+            filename=filename,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        return {
+            "status": "error",
+            "error": str(e),
+            "entities_extracted": 0,
+            "relationships_extracted": 0,
+            "task_id": None,
+        }
+    finally:
+        if pool:
+            await pool.close()
+
+
 async def generate_llm_response(query: str, context: str, results: list) -> SimpleRAGResponse:
     """Generate LLM response using Pydantic AI Agent or fallback"""
 
@@ -549,9 +648,13 @@ async def home():
 async def upload_and_process(
     file: UploadFile = File(...),
     chunk_size: int = Form(512),
-    table_name: str = Form("document_chunks")
+    table_name: str = Form("document_chunks"),
+    access_password: Optional[str] = Form(None),
+    x_app_password: Optional[str] = Header(default=None)
 ):
     """Upload and process document with comprehensive validation and pgvector storage"""
+
+    require_access_password(access_password or x_app_password)
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -561,9 +664,11 @@ async def upload_and_process(
 
     # Generate unique document ID
     document_id = str(uuid.uuid4())
+    processed_id = document_id
     temp_dir = Path("temp_uploads")
     temp_dir.mkdir(exist_ok=True)
     temp_path = temp_dir / f"{document_id}_{file.filename}"
+    cleanup_temp = True
 
     try:
         # Write temporary file for validation
@@ -581,6 +686,49 @@ async def upload_and_process(
 
         # Process with pgvector pipeline using specified table
         pipeline = await get_pipeline(table_name)
+
+        if celery_upload_enabled():
+            try:
+                from worker.tasks import process_upload_task
+
+                async_task = process_upload_task.apply_async(
+                    kwargs={
+                        "temp_path": str(temp_path),
+                        "document_id": document_id,
+                        "filename": file.filename,
+                        "content_type": file.content_type or "application/octet-stream",
+                        "file_size": validation_result.file_size,
+                        "chunk_size": chunk_size,
+                        "table_name": table_name,
+                    }
+                )
+
+                logfire.info(
+                    "Upload queued for Celery worker",
+                    document_id=document_id,
+                    filename=file.filename,
+                    task_id=async_task.id,
+                    table_name=table_name,
+                )
+
+                cleanup_temp = False  # worker will remove the temp file
+
+                return UploadResponse(
+                    status="queued",
+                    document_id=document_id,
+                    filename=file.filename,
+                    message=f"Upload queued for processing. Task {async_task.id}",
+                    chunks_created=None,
+                    task_id=async_task.id,
+                )
+            except Exception as celery_error:
+                logfire.warning(
+                    "Celery upload dispatch failed; running inline",
+                    document_id=document_id,
+                    filename=file.filename,
+                    error=str(celery_error),
+                    table_name=table_name,
+                )
 
         with logfire.span("document_insertion",
                          document_id=document_id,
@@ -611,122 +759,81 @@ async def upload_and_process(
                         filename=file.filename)
 
             # Step: Extract entities and relationships from chunks
-            entities_extracted = 0
-            relationships_extracted = 0
+            extraction_summary = {
+                "status": None,
+                "task_id": None,
+                "entities_extracted": 0,
+                "relationships_extracted": 0,
+            }
 
-            try:
-                # Check if entity extraction is enabled
-                enable_extraction = os.getenv("ENABLE_ENTITY_EXTRACTION", "true").lower() == "true"
+            if celery_enabled():
+                try:
+                    from worker.celery_app import celery_app
 
-                print(f"\n{'='*70}")
-                print(f"📊 ENTITY EXTRACTION CHECK")
-                print(f"{'='*70}")
-                print(f"Document ID: {processed_id}")
-                print(f"Extraction Enabled: {enable_extraction}")
-                print(f"{'='*70}\n")
+                    async_task = celery_app.send_task(
+                        "worker.tasks.run_entity_extraction",
+                        args=[processed_id, table_name]
+                    )
+                    extraction_summary.update(
+                        status="queued",
+                        task_id=async_task.id,
+                    )
+                    logfire.info(
+                        "Entity extraction queued for Celery worker",
+                        document_id=processed_id,
+                        filename=file.filename,
+                        task_id=async_task.id,
+                        table_name=table_name,
+                    )
+                except Exception as celery_error:
+                    logfire.warning(
+                        "Celery dispatch failed, running extraction inline",
+                        document_id=processed_id,
+                        filename=file.filename,
+                        error=str(celery_error),
+                        table_name=table_name,
+                    )
+                    extraction_summary = await run_entity_extraction_for_document(
+                        document_id=processed_id,
+                        filename=file.filename,
+                        table_name=table_name,
+                    )
+            else:
+                extraction_summary = await run_entity_extraction_for_document(
+                    document_id=processed_id,
+                    filename=file.filename,
+                    table_name=table_name,
+                )
 
-                if enable_extraction:
-                    with logfire.span("entity_extraction", document_id=processed_id):
-                        print(f"🚀 Starting entity extraction for document {processed_id[:8]}...")
-                        logfire.info("Starting entity extraction",
-                                   document_id=processed_id,
-                                   filename=file.filename)
+        entities_extracted = extraction_summary.get("entities_extracted", 0)
+        relationships_extracted = extraction_summary.get(
+            "relationships_extracted", 0)
+        extraction_status = extraction_summary.get("status")
 
-                        # Create extraction service
-                        print(f"🔧 Creating database connection pool...")
-                        pool = await get_db_pool()
-                        print(f"✓ Database pool created")
-
-                        print(f"🔧 Initializing extraction service...")
-                        extraction_service = await create_extraction_service(pool, table_name=table_name)
-                        print(f"✓ Extraction service initialized with table: {table_name}")
-
-                        # Extract from all chunks in this document
-                        print(f"🔍 Extracting entities and relationships from chunks...")
-                        logfire.info("Beginning entity extraction from chunks",
-                                   document_id=processed_id)
-
-                        extraction_result = await extraction_service.extract_from_document(
-                            document_id=uuid.UUID(processed_id),
-                            verbose=False
-                        )
-
-                        entities_extracted = extraction_result['total_entities']
-                        relationships_extracted = extraction_result['total_relationships']
-                        extraction_failed = extraction_result['failed'] > 0
-                        status_icon = "✅" if not extraction_failed else "⚠️"
-                        status_text = "ENTITY EXTRACTION COMPLETE" if not extraction_failed else "ENTITY EXTRACTION COMPLETED WITH ERRORS"
-
-                        print(f"\n{'='*70}")
-                        print(f"{status_icon} {status_text}")
-                        print(f"{'='*70}")
-                        print(f"Document ID: {processed_id[:8]}...")
-                        print(f"Entities extracted: {entities_extracted}")
-                        print(f"Relationships extracted: {relationships_extracted}")
-                        print(f"Chunks processed: {extraction_result['successful']}/{extraction_result['total_chunks']}")
-                        print(f"Chunks failed: {extraction_result['failed']}")
-                        print(f"{'='*70}\n")
-
-                        log_writer = logfire.info if not extraction_failed else logfire.warning
-                        log_writer("Entity extraction completed",
-                                   document_id=processed_id,
-                                   filename=file.filename,
-                                   entities_extracted=entities_extracted,
-                                   relationships_extracted=relationships_extracted,
-                                   chunks_successful=extraction_result['successful'],
-                                   chunks_failed=extraction_result['failed'],
-                                   total_chunks=extraction_result['total_chunks'])
-
-                        # Close the pool
-                        await pool.close()
-                        print(f"✓ Database pool closed")
-
-                else:
-                    print(f"⚠️  Entity extraction is DISABLED (ENABLE_ENTITY_EXTRACTION=false)")
-                    logfire.info("Entity extraction disabled",
-                               document_id=processed_id,
-                               env_value=os.getenv("ENABLE_ENTITY_EXTRACTION"))
-
-            except Exception as e:
-                # Don't fail upload if entity extraction fails
-                print(f"\n{'='*70}")
-                print(f"❌ ENTITY EXTRACTION FAILED")
-                print(f"{'='*70}")
-                print(f"Document ID: {processed_id[:8]}...")
-                print(f"Error: {str(e)}")
-                print(f"Error Type: {type(e).__name__}")
-                print(f"{'='*70}\n")
-
-                logfire.error("Entity extraction failed",
-                            document_id=processed_id,
-                            filename=file.filename,
-                            error=str(e),
-                            error_type=type(e).__name__,
-                            traceback=True)
-
-        # Final completion log
-        print(f"\n{'='*70}")
-        print(f"✅ DOCUMENT UPLOAD COMPLETE")
-        print(f"{'='*70}")
-        print(f"Document ID: {processed_id}")
-        print(f"Filename: {file.filename}")
-        print(f"Entities: {entities_extracted}")
-        print(f"Relationships: {relationships_extracted}")
-        print(f"{'='*70}\n")
+        if extraction_status == "queued":
+            extraction_note = f"Entity extraction queued (task {extraction_summary.get('task_id')})."
+        elif extraction_status == "disabled":
+            extraction_note = "Entity extraction disabled by configuration."
+        elif extraction_status == "error":
+            extraction_note = f"Entity extraction failed: {extraction_summary.get('error', 'unknown error')}."
+        else:
+            extraction_note = f"Extracted {entities_extracted} entities and {relationships_extracted} relationships."
 
         logfire.info("Upload and processing pipeline completed",
                    document_id=processed_id,
                    filename=file.filename,
                    entities_extracted=entities_extracted,
                    relationships_extracted=relationships_extracted,
-                   status="success")
+                   status=extraction_status or "success",
+                   task_id=extraction_summary.get("task_id"))
 
         return UploadResponse(
             status="success",
             document_id=processed_id,
             filename=file.filename,
-            message=f"Document processed successfully. Extracted {entities_extracted} entities and {relationships_extracted} relationships.",
-            chunks_created=None
+            message=f"Document processed successfully. {extraction_note}",
+            chunks_created=None,
+            task_id=extraction_summary.get("task_id")
         )
 
     except HTTPException:
@@ -738,12 +845,17 @@ async def upload_and_process(
         )
     finally:
         # Cleanup temporary file
-        temp_path.unlink(missing_ok=True)
+        if cleanup_temp:
+            temp_path.unlink(missing_ok=True)
 
 
 @app.post("/query", response_model=RAGResponse)
-async def query_documents(request: QueryRequest):
+async def query_documents(
+    request: QueryRequest,
+    x_app_password: Optional[str] = Header(default=None)
+):
     """Query documents using pgvector similarity search + LLM generation with optional reranking"""
+    require_access_password(x_app_password)
     try:
         result = await perform_document_search(
             query=request.query,
@@ -763,9 +875,11 @@ async def query_documents_form(
     query: str = Form(...),
     limit: int = Form(5),
     threshold: float = Form(0.7),
-    table_name: str = Form(DEFAULT_TABLE_NAME)
+    table_name: str = Form(DEFAULT_TABLE_NAME),
+    access_password: Optional[str] = Form(None)
 ):
     """Query documents using form data (for HTML form submission) with optional reranking"""
+    require_access_password(access_password)
     try:
         result = await perform_document_search(
             query=query,

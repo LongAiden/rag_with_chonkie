@@ -100,6 +100,8 @@ HOME_PAGE_HTML = """
         <form action="/upload" method="post" enctype="multipart/form-data">
             <input type="file" name="file" accept=".pdf,.docx,.txt" required>
             <br>
+            <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
+            <br>
             <label>Table Name: <input type="text" name="table_name" value="document_chunks" placeholder="document_chunks"></label>
             <br>
             <label>Chunk Size: <input type="number" name="chunk_size" value="512" min="128" max="2048"></label>
@@ -113,6 +115,8 @@ HOME_PAGE_HTML = """
         <p>Semantic search powered by sentence embeddings and pgvector cosine similarity.</p>
         <form action="/query-form" method="post">
             <textarea name="query" placeholder="Ask a question about your documents..." required rows="3"></textarea>
+            <br>
+            <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
             <br>
             <label>Table Name: <input type="text" name="table_name" value="document_chunks" placeholder="document_chunks"></label>
             <br>
@@ -129,13 +133,46 @@ HOME_PAGE_HTML = """
         <a href="/health" target="_blank"><button>Health Check</button></a>
     </div>
 
-    <!-- Success/Error notification -->
+        <!-- Success/Error notification -->
     <div id="notification" class="notification">
-        <span class="close" onclick="hideNotification()">×</span>
+        <span class="close" onclick="hideNotification()">x</span>
         <span id="notification-message"></span>
     </div>
 
     <script>
+        const PASSWORD_KEY = 'rag_access_password';
+
+        function loadPassword() {
+            try {
+                return localStorage.getItem(PASSWORD_KEY) || '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function savePassword(value) {
+            try {
+                if (value) localStorage.setItem(PASSWORD_KEY, value);
+            } catch (e) {
+                // ignore storage issues
+            }
+        }
+
+        function hydratePasswordInputs() {
+            const saved = loadPassword();
+            if (!saved) return;
+            document.querySelectorAll('input[name="access_password"]').forEach((el) => {
+                if (!el.value) el.value = saved;
+            });
+        }
+
+        function cachePasswordFromForm(form) {
+            const field = form.querySelector('input[name="access_password"]');
+            if (field && field.value) savePassword(field.value);
+        }
+
+        hydratePasswordInputs();
+
         // Show notification function
         function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
@@ -165,6 +202,9 @@ HOME_PAGE_HTML = """
         document.querySelector('form[action="/upload"]').addEventListener('submit', async function(e) {
             e.preventDefault();
 
+            cachePasswordFromForm(this);
+            hydratePasswordInputs();
+
             const formData = new FormData(this);
             const submitButton = this.querySelector('button[type="submit"]');
             const originalText = submitButton.textContent;
@@ -182,13 +222,14 @@ HOME_PAGE_HTML = """
                 const result = await response.json();
 
                 if (response.ok) {
-                    showNotification(`✅ Document "${result.filename}" uploaded and processed successfully! Document ID: ${result.document_id.substring(0,8)}...`, 'success');
+                    showNotification(`? Document "${result.filename}" uploaded and processed successfully! Document ID: ${result.document_id.substring(0,8)}...`, 'success');
                     this.reset(); // Clear the form
+                    hydratePasswordInputs();
                 } else {
-                    showNotification(`❌ Upload failed: ${result.detail}`, 'error');
+                    showNotification(`? Upload failed: ${result.detail}`, 'error');
                 }
             } catch (error) {
-                showNotification(`❌ Upload failed: ${error.message}`, 'error');
+                showNotification(`? Upload failed: ${error.message}`, 'error');
             } finally {
                 // Restore button
                 submitButton.textContent = originalText;
@@ -196,12 +237,18 @@ HOME_PAGE_HTML = """
             }
         });
 
+        // Ensure password is cached on query form submissions
+        document.querySelector('form[action="/query-form"]').addEventListener('submit', function() {
+            cachePasswordFromForm(this);
+            hydratePasswordInputs();
+        });
+
         // Check for URL parameters to show notifications (if redirected)
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('upload') === 'success') {
-            showNotification('✅ Document uploaded and processed successfully!', 'success');
+            showNotification('? Document uploaded and processed successfully!', 'success');
         } else if (urlParams.get('upload') === 'error') {
-            showNotification('❌ Upload failed. Please try again.', 'error');
+            showNotification('? Upload failed. Please try again.', 'error');
         }
     </script>
 </body>
@@ -753,3 +800,4 @@ HEALTH_ERROR_HTML = """
 </body>
 </html>
 """
+

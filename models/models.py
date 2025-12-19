@@ -18,6 +18,10 @@ class UploadResponse(BaseModel):
     filename: str
     message: str
     chunks_created: Optional[int] = None
+    task_id: Optional[str] = Field(
+        default=None,
+        description="Celery task id if processing/extraction was queued",
+    )
 
 
 class SupportedFileType(str, Enum):

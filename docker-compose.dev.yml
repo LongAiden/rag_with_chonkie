@@ -49,11 +49,11 @@ services:
     ports:
       - "5432:5432"
 
-  # Development database viewer
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: rag_pgadmin_dev
-    environment:
+    # Development database viewer
+    pgadmin:
+      image: dpage/pgadmin4:latest
+      container_name: rag_pgadmin_dev
+      environment:
       PGADMIN_DEFAULT_EMAIL: dev@rag.local
       PGADMIN_DEFAULT_PASSWORD: dev
       PGADMIN_CONFIG_SERVER_MODE: 'False'
@@ -63,6 +63,42 @@ services:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
       - postgres
+    networks:
+      - rag_network
+
+  # Redis for Celery (dev)
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis_dev
+    ports:
+      - "6379:6379"
+    networks:
+      - rag_network
+
+  # Celery worker for async tasks (dev)
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A worker.celery_app worker --loglevel=info
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-rag_db}
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-rag_db}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - USE_CELERY_FOR_EXTRACTION=${USE_CELERY_FOR_EXTRACTION:-true}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    volumes:
+      - .:/app
+      - upload_data:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
     networks:
       - rag_network
 
