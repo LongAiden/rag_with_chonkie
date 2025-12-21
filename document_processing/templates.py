@@ -389,7 +389,7 @@ SEARCH_ERROR_HTML = """
 </head>
 <body>
     <div class="error">
-        <h2>❌ Search Failed</h2>
+        <h2> Search Failed</h2>
         <p>Sorry, there was an error processing your query:</p>
         <p><em>{error_message}</em></p>
         <a href="/"><button>← Back to Search</button></a>
@@ -574,7 +574,7 @@ STATS_ERROR_HTML = """
 </head>
 <body>
     <div class="error">
-        <h2>❌ Failed to Load Statistics</h2>
+        <h2> Failed to Load Statistics</h2>
         <p>Error: {error_message}</p>
         <a href="/"><button>← Back to Home</button></a>
     </div>
@@ -791,7 +791,7 @@ HEALTH_ERROR_HTML = """
 </head>
 <body>
     <div class="error">
-        <div class="status-icon">❌</div>
+        <div class="status-icon"></div>
         <h2>System Unhealthy</h2>
         <p><strong>Error:</strong> {error_message}</p>
         <p>The system is experiencing issues and may not function properly.</p>
