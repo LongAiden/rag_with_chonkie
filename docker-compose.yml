@@ -12,11 +12,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4.0"
-          memory: 8G
-        reservations:
           cpus: "2.0"
           memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-rag_db}
       POSTGRES_USER: ${POSTGRES_USER:-admin}
@@ -54,19 +54,19 @@ services:
   # RAG Application
   # ============================================
   app:
-    image: rag_with_llama:latest
     build:
       context: .
       dockerfile: Dockerfile
+    image: rag_with_llama:latest
     container_name: rag_app
     deploy:
       resources:
         limits:
-          cpus: "4.0"
-          memory: 8G
-        reservations:
           cpus: "2.0"
           memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
     environment:
       # Database connection
       POSTGRES_HOST: postgres
@@ -130,10 +130,10 @@ services:
   # Celery Worker (reuses app image)
   # ============================================
   celery_worker:
-    image: rag_with_llama:latest
     build:
       context: .
       dockerfile: Dockerfile
+    image: rag_with_llama:latest
     container_name: rag_celery_worker
     command: celery -A worker.celery_app worker --loglevel=info
     environment:

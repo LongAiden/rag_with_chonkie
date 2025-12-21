@@ -5,11 +5,64 @@ A production-ready Retrieval-Augmented Generation (RAG) system built with FastAP
 ## 📋 Installation & Setup
 
 ### 1. Prerequisites
-- Python 3.8+
-- PostgreSQL 14+
+
+**Docker Setup (Recommended - Works on All Platforms)**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) installed
+- 8GB+ available RAM
+- Git
+
+**Manual Setup (Alternative)**
+- Python 3.11+
+- PostgreSQL 14+ with pgvector extension
 - Homebrew (for macOS)
 
 ### 2. Quick Setup
+
+#### Option A: Docker (Recommended - Mac, Windows, Linux)
+
+```bash
+# 1. Clone the repository
+git clone <repo-url>
+cd rag_with_llama
+
+# 2. Create environment file
+cp deployment/.env.example deployment/.env
+
+# 3. Edit deployment/.env with your API keys
+# Required: GOOGLE_API_KEY
+# Optional: LOGFIRE_WRITE_TOKEN, APP_ACCESS_PASSWORD
+nano deployment/.env  # or use your preferred editor
+
+# 4. Build and run all services
+docker compose up --build
+
+# Access the application at:
+# - API: http://localhost:8000
+# - Health Check: http://localhost:8000/health
+# - pgAdmin (optional): http://localhost:5050
+```
+
+**Platform-Specific Notes:**
+- **Mac**: Works on both Intel and Apple Silicon (M1/M2/M3). Ensure Docker Desktop has 8GB+ memory allocated in Settings → Resources
+- **Windows**: WSL2 backend recommended. Use `build.bat` for optimized builds
+- **Linux**: Native performance (fastest). Use `./build.sh` for optimized builds
+
+**Stopping Services:**
+```bash
+docker compose down
+```
+
+**Rebuilding After Changes:**
+```bash
+# Code changes only (fast - ~30 seconds)
+docker compose restart app celery_worker
+
+# Dependency changes (slower - ~3-5 minutes)
+docker compose up --build
+```
+
+#### Option B: Manual Setup
+
 ```bash
 # Copy environment template
 cp deployment/.env.example deployment/.env
