@@ -261,21 +261,34 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION calculate_entity_pagerank IS 'Calculate PageRank scores to find important entities';
 
 -- ============================================
--- UPDATE EXISTING CHUNKS TABLE
--- Add entity references to chunks
+-- CHUNKS TABLE (Document Storage)
+-- Create chunks table if not exists, then add entity references
 -- ============================================
 
--- Add entity_ids column to chunks table if it doesn't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'chunks' AND column_name = 'entity_ids'
-    ) THEN
-        ALTER TABLE chunks ADD COLUMN entity_ids UUID[] DEFAULT ARRAY[]::UUID[];
-        CREATE INDEX idx_chunks_entity_ids ON chunks USING gin(entity_ids);
-    END IF;
-END $$;
+-- Create chunks table with entity support
+CREATE TABLE IF NOT EXISTS chunks (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    embedding vector(384),
+    metadata JSONB,
+    entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for chunks table
+CREATE INDEX IF NOT EXISTS chunks_embedding_idx
+    ON chunks USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 100);
+
+CREATE INDEX IF NOT EXISTS chunks_document_id_idx
+    ON chunks (document_id);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_entity_ids
+    ON chunks USING gin(entity_ids);
+
+COMMENT ON TABLE chunks IS 'Document chunks with embeddings and entity references';
+COMMENT ON COLUMN chunks.entity_ids IS 'Array of entity UUIDs extracted from this chunk';
 
 -- ============================================
 -- SAMPLE QUERIES FOR TESTING

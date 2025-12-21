@@ -1,19 +1,23 @@
 # ============================================
 # RAG + Knowledge Graph Application Dockerfile
+# OPTIMIZED VERSION
 # ============================================
 
+ARG PYTHON_VERSION=3.11
+
 # Stage 1: build Python environment with cached dependencies
-FROM python:3.11-slim AS builder
+FROM python:${PYTHON_VERSION}-slim AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=0 \
     VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
 # Install build deps once in builder
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         gcc \
@@ -29,12 +33,19 @@ WORKDIR /build
 COPY deployment/requirements.txt .
 
 # Cache pip downloads between builds for faster Windows/WSL iterations
+ARG PYTORCH_INDEX=https://download.pytorch.org/whl/cpu
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+    pip install --extra-index-url ${PYTORCH_INDEX} \
+    --use-pep517 \
+    --prefer-binary \
+    -r requirements.txt
+
+# Download spaCy model at build time for faster runtime startup
+RUN python -m spacy download en_core_web_sm --quiet || echo "spaCy model download skipped"
 
 # Stage 2: runtime image stays lean
-FROM python:3.11-slim
+FROM python:${PYTHON_VERSION}-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -45,8 +56,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Runtime dependencies only (no compilers)
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         curl \
         libpq-dev \
@@ -55,11 +66,22 @@ RUN --mount=type=cache,target=/var/cache/apt \
 # Copy prebuilt virtualenv from builder stage
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy application code last to maximize cache hits
-COPY . .
+# Copy application code by module for better caching on code changes
+COPY document_processing/ ./document_processing/
+COPY api/ ./api/
+COPY models/ ./models/
+COPY graph_processing/ ./graph_processing/
+COPY worker/ ./worker/
+COPY config/ ./config/
+COPY migrations/ ./migrations/
 
 # Required directories for runtime state
 RUN mkdir -p /app/data /app/logs /app/uploads
+
+# Security: Run as non-root user
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 

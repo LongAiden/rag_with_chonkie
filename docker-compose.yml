@@ -54,6 +54,7 @@ services:
   # RAG Application
   # ============================================
   app:
+    image: rag_with_llama:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -126,9 +127,10 @@ services:
     restart: unless-stopped
 
   # ============================================
-  # Celery Worker
+  # Celery Worker (reuses app image)
   # ============================================
   celery_worker:
+    image: rag_with_llama:latest
     build:
       context: .
       dockerfile: Dockerfile

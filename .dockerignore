@@ -67,6 +67,7 @@ docs/
 
 # Tests
 tests/
+test/
 test_*.py
 *_test.py
 .pytest_cache/
@@ -81,8 +82,11 @@ htmlcov/
 data/
 uploads/
 *.csv
-*.json
 *.parquet
+
+# Experiments and examples
+experiment/
+examples/
 
 # Temporary files
 tmp/
