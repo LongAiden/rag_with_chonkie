@@ -2,7 +2,7 @@
 numpy>=1.21.0,<2.0
 scipy>=1.10.0,<1.12.0
 # CPU wheels avoid downloading large CUDA artifacts during image builds
-torch==2.3.1+cpu
+torch==2.3.1
 sentence-transformers>=2.2.0
 
 # Vector Database & SQL
