@@ -132,6 +132,10 @@ def get_page_number_for_position(position, page_mapping):
 def process_document(file_path, chunk_size=512, similarity_threshold=0.5, embedding_model=None):
     """
     Process a document (PDF, DOCX, or TXT) and return chunks with page numbers.
+
+    DEPRECATED: Use process_document_with_processor() for better extensibility.
+    This function is kept for backward compatibility.
+
     Args:
         file_path (str): Path to the document file
         chunk_size (int): Maximum tokens per chunk
@@ -177,3 +181,81 @@ def process_document(file_path, chunk_size=512, similarity_threshold=0.5, embedd
             chunk.page_number = 1  # Default to page 1 if no position info
 
     return chunks
+
+
+# ============================================================================
+# NEW: Refactored using Abstract Method Pattern
+# ============================================================================
+
+def process_document_with_processor(file_path, chunk_size=512, similarity_threshold=0.5, embedding_model=None):
+    """
+    Process a document using the Abstract Method pattern with automatic processor selection.
+
+    This is the RECOMMENDED way to process documents. It uses:
+    - Abstract Method Pattern: DocumentProcessor base class with concrete implementations
+    - Factory Method Pattern: Automatic processor selection based on file type
+    - Polymorphism: All file types processed through the same interface
+
+    Benefits:
+    - Easy to add new file types (just create a new processor class)
+    - Consistent validation and error handling
+    - No IF-ELSE chains
+    - Better testability
+
+    Args:
+        file_path (str): Path to the document file
+        chunk_size (int): Maximum tokens per chunk
+        similarity_threshold (float): Similarity threshold for semantic chunking
+        embedding_model: Custom embedding model
+
+    Returns:
+        list: chunks with page number metadata attached
+
+    Raises:
+        ValueError: If file type is not supported or file is invalid
+
+    Example:
+        >>> chunks = process_document_with_processor('document.pdf', chunk_size=512)
+        >>> chunks = process_document_with_processor('report.docx', chunk_size=1024)
+        >>> chunks = process_document_with_processor('notes.txt')
+    """
+    from .processor_factory import get_processor_for_file
+
+    # Factory Method: Get the appropriate processor automatically
+    processor = get_processor_for_file(file_path)
+
+    # Polymorphism: All processors have the same interface
+    chunks = processor.process_document(
+        file_path,
+        chunk_size,
+        similarity_threshold,
+        embedding_model
+    )
+
+    return chunks
+
+
+def get_supported_file_types():
+    """
+    Get all supported file types across all registered processors.
+
+    Returns:
+        list: List of supported file extensions (e.g., ['.pdf', '.docx', '.txt'])
+    """
+    from .processor_factory import get_registry
+
+    registry = get_registry()
+    return registry.get_supported_extensions()
+
+
+def list_available_processors():
+    """
+    List all available document processors.
+
+    Returns:
+        list: List of registered DocumentProcessor instances
+    """
+    from .processor_factory import get_registry
+
+    registry = get_registry()
+    return registry.list_processors()
