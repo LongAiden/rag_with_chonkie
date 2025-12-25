@@ -168,11 +168,11 @@ cd C:\path\to\rag_llama_index
 
 ```bash
 # Copy the example environment file
-cp deployment/.env.example deployment/.env
+cp .env.example .env
 
 # Edit .env file with your settings
 # REQUIRED: Set your Google API key
-nano deployment/.env  # or use any text editor
+nano .env  # or use any text editor
 ```
 
 **Minimum required in `.env`**:

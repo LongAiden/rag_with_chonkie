@@ -26,12 +26,12 @@ git clone <repo-url>
 cd rag_with_llama
 
 # 2. Create environment file
-cp deployment/.env.example deployment/.env
+cp .env.example .env
 
-# 3. Edit deployment/.env with your API keys
+# 3. Edit .env with your API keys
 # Required: GOOGLE_API_KEY
 # Optional: LOGFIRE_WRITE_TOKEN, APP_ACCESS_PASSWORD
-nano deployment/.env  # or use your preferred editor
+nano .env  # or use your preferred editor
 
 # 4. Build and run all services
 docker compose up --build
@@ -65,9 +65,9 @@ docker compose up --build
 
 ```bash
 # Copy environment template
-cp deployment/.env.example deployment/.env
+cp .env.example .env
 
-# Edit deployment/.env with your credentials:
+# Edit .env with your credentials:
 POSTGRES_USER=your_username
 POSTGRES_PASSWORD=your_password
 POSTGRES_DB=rag_db

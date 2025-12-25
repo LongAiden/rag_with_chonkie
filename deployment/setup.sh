@@ -1,5 +1,5 @@
 # Load environment variables
-source deployment/.env
+source .env
 
 # Install PostgreSQL via Homebrew
 brew install postgresql

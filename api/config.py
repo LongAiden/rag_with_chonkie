@@ -110,14 +110,15 @@ class AppConfig:
 
 def load_environment():
     """Load environment variables from .env file."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    env_path = os.path.join(script_dir, '../deployment/.env')
+    # Load from project root .env file
+    project_root = Path(__file__).parent.parent
+    env_path = project_root / '.env'
     load_dotenv(env_path)
 
     # Docker compose injects empty strings when variables aren't defined, so reapply
     # values from the env file for any unset/blank environment variables.
-    if os.path.exists(env_path):
-        for key, value in dotenv_values(env_path).items():
+    if env_path.exists():
+        for key, value in dotenv_values(str(env_path)).items():
             if (os.getenv(key) in (None, "")) and value is not None:
                 os.environ[key] = value
 

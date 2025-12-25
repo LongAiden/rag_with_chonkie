@@ -130,7 +130,7 @@ if is_relationship_type_enabled("USES"):
 
 ## Environment Variables
 
-Add these to your [.env](../deployment/.env) file:
+Add these to your [.env](../.env) file:
 
 ```bash
 # Entity Extraction
@@ -277,4 +277,4 @@ point `GEMINI_MODEL` at a paid tier without touching any code.
 
 - [GRAPH_INTEGRATION_GUIDE.md](../GRAPH_INTEGRATION_GUIDE.md) - Complete integration guide
 - [entity_types.py](../graph_processing/entity_types.py) - All entity/relationship types
-- [.env.example](../deployment/.env.example) - Environment variables template
+- [.env.example](../.env.example) - Environment variables template
