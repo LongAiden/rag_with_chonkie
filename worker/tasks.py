@@ -14,7 +14,7 @@ from worker.celery_app import celery_app
 
 async def _run_entity_extraction(document_id: str, table_name: str) -> Dict[str, Any]:
     # Import inside the task to avoid loading FastAPI app when the worker starts.
-    from document_processing.full_pipeline_pgvector import (
+    from api.app import (
         run_entity_extraction_for_document,
     )
 
@@ -51,7 +51,7 @@ async def _process_upload(
     - embed chunks and store
     - run entity extraction inline
     """
-    from document_processing.full_pipeline_pgvector import (
+    from api.app import (
         DEFAULT_CHUNKING_SIMILARITY,
         config,
         get_pipeline,

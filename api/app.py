@@ -18,8 +18,8 @@ from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Form, Header
 from fastapi.responses import HTMLResponse
 
-from document_processing.config import AppConfig, DEFAULT_TABLE_NAME, DEFAULT_EMBEDDING_MODEL
-from document_processing.embed_chunks_to_db import ChunkEmbeddingPipeline
+from api.config import AppConfig, DEFAULT_TABLE_NAME, DEFAULT_EMBEDDING_MODEL
+from ingestion.embedding.vector_store import ChunkEmbeddingPipeline
 from models.models import QueryRequest, UploadResponse, RAGResponse
 
 # Initialize FastAPI application
@@ -56,7 +56,7 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
 
 
 # Import route handlers from api_routes module
-from document_processing.api_routes import (
+from api.routes.document_routes import (
     home,
     upload_and_process,
     query_documents,

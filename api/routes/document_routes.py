@@ -11,16 +11,16 @@ from typing import Optional
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Header
 from fastapi.responses import HTMLResponse
 
-from document_processing.config import DEFAULT_TABLE_NAME, DEFAULT_CHUNKING_SIMILARITY
-from document_processing.validators import (
+from api.config import DEFAULT_TABLE_NAME, DEFAULT_CHUNKING_SIMILARITY
+from api.validators import (
     validate_upload_params,
     require_access_password,
     celery_enabled,
     celery_upload_enabled
 )
-from document_processing.retrieval import perform_document_search
-from document_processing.extraction_flow import run_entity_extraction_for_document
-from document_processing.templates import (
+from retrieval.search import perform_document_search
+from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
+from api.templates import (
     HOME_PAGE_HTML,
     SEARCH_RESULTS_HTML,
     SEARCH_ERROR_HTML,
@@ -466,15 +466,23 @@ async def health_check(get_pipeline=None):
 
 @router.get("/supported-types")
 async def get_supported_types(config=None):
-    """Get information about supported file types and validation config."""
+    """Get information about supported file types and validation config (using processor registry)."""
+    from ingestion.chunking.semantic_chunker import get_supported_file_types, list_available_processors
+
+    # Get supported types from processor registry (dynamic based on registered processors)
+    supported_extensions = get_supported_file_types()
+    processors = list_available_processors()
+
     return {
-        "supported_extensions": config.file_validator.config.allowed_extensions,
+        "supported_extensions": supported_extensions,
         "max_file_size_mb": config.file_validator.config.max_file_size_mb,
-        "supported_types": ["pdf", "docx", "txt"],
+        "supported_types": [ext.replace('.', '') for ext in supported_extensions],
+        "registered_processors": [str(processor) for processor in processors],
         "vector_store_info": {
             "embedding_model": "all-MiniLM-L6-v2",
             "database_backend": "PostgreSQL + pgvector",
-            "chunking_method": "semantic_chunking_with_chonkie"
+            "chunking_method": "semantic_chunking_with_chonkie",
+            "processor_pattern": "Abstract Method + Factory Method"
         }
     }
 

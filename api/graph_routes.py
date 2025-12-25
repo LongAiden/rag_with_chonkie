@@ -39,7 +39,7 @@ router = APIRouter(prefix="/graph", tags=["graph"])
 async def get_db_pool() -> asyncpg.Pool:
     """Get database connection pool."""
     # Import from your existing database setup
-    from document_processing.full_pipeline_pgvector import get_db_pool as get_pool
+    from api.app import get_db_pool as get_pool
     return await get_pool()
 
 

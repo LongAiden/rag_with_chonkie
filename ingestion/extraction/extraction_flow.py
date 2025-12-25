@@ -8,7 +8,7 @@ import uuid
 import logfire
 from typing import Dict, Optional
 
-from document_processing.validators import entity_extraction_enabled
+from api.validators import entity_extraction_enabled
 
 
 async def get_db_pool(config):

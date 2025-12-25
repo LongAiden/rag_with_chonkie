@@ -8,9 +8,9 @@ import json
 import logfire
 from typing import List, Dict, Optional
 
-from document_processing.utils import rerank_bm25
-from document_processing.llm_operations import generate_llm_response
-from document_processing.extraction_flow import get_db_pool
+from retrieval.utils import rerank_bm25
+from retrieval.llm_operations import generate_llm_response
+from ingestion.extraction.extraction_flow import get_db_pool
 from models.models import RAGResponse, RAGSource, RAGResponseMetadata
 
 

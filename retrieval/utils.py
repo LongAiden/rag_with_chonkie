@@ -8,7 +8,7 @@ import numpy as np
 from typing import List, Dict
 from rank_bm25 import BM25Okapi
 
-from document_processing.reranker import Reranker
+from retrieval.reranking import Reranker
 
 
 def rerank_bm25(query: str, sources: List[Dict], top_k: int) -> List[Dict]:

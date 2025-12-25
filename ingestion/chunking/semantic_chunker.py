@@ -3,6 +3,12 @@ from docx import Document
 from chonkie import SemanticChunker
 
 
+# ============================================================================
+# DEPRECATED FUNCTIONS - Kept for backward compatibility only
+# These are replaced by processor classes: pdf_processor.py, docx_processor.py
+# Use process_document_with_processor() instead of process_document()
+# ============================================================================
+
 def extract_text_from_pdf(pdf_path):
     """
     Extract text from PDF file using PyPDF2 with page tracking.
@@ -79,6 +85,10 @@ def extract_text_from_docx(docx_path):
         print(f"Error extracting text from DOCX: {e}")
         raise ValueError(f"Failed to extract text from DOCX file: {e}")
 
+
+# ============================================================================
+# SHARED UTILITY FUNCTIONS - Used by both old and new code
+# ============================================================================
 
 def chunk_with_semantic_chunker(text, chunk_size=512, similarity_threshold=0.5, embedding_model=None):
     """
@@ -219,7 +229,7 @@ def process_document_with_processor(file_path, chunk_size=512, similarity_thresh
         >>> chunks = process_document_with_processor('report.docx', chunk_size=1024)
         >>> chunks = process_document_with_processor('notes.txt')
     """
-    from .processor_factory import get_processor_for_file
+    from ingestion.processors.processor_factory import get_processor_for_file
 
     # Factory Method: Get the appropriate processor automatically
     processor = get_processor_for_file(file_path)
@@ -242,7 +252,7 @@ def get_supported_file_types():
     Returns:
         list: List of supported file extensions (e.g., ['.pdf', '.docx', '.txt'])
     """
-    from .processor_factory import get_registry
+    from ingestion.processors.processor_factory import get_registry
 
     registry = get_registry()
     return registry.get_supported_extensions()
@@ -255,7 +265,7 @@ def list_available_processors():
     Returns:
         list: List of registered DocumentProcessor instances
     """
-    from .processor_factory import get_registry
+    from ingestion.processors.processor_factory import get_registry
 
     registry = get_registry()
     return registry.list_processors()

@@ -7,7 +7,7 @@ import os
 from typing import Optional
 from fastapi import HTTPException
 
-from document_processing.config import ALLOWED_CONTENT_TYPES
+from api.config import ALLOWED_CONTENT_TYPES
 
 
 def validate_upload_params(chunk_size: int, content_type: str):

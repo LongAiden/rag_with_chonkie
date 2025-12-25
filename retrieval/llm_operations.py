@@ -6,7 +6,7 @@ Handles LLM-based response generation with fallback mechanisms.
 import logfire
 from typing import List
 
-from document_processing.config import get_gemini_model
+from api.config import get_gemini_model
 from models.models import SimpleRAGResponse
 
 

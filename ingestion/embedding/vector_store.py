@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from document_processing.chunk_pdf_with_chonkie import process_document
+from ingestion.chunking.semantic_chunker import process_document_with_processor
 
 
 @dataclass
@@ -340,15 +340,16 @@ class ChunkEmbeddingPipeline:
 
         print(f"Processing document: {filename} (ID: {document_id})")
 
-        # Use the imported process_document function for chunking with page numbers
-        chunks = process_document(
+        # Use the new Abstract Method pattern processor for chunking with page numbers
+        # Automatically selects the right processor (PDF, DOCX, TXT) based on file extension
+        chunks = process_document_with_processor(
             file_path=str(file_path),
             chunk_size=chunk_size,
             similarity_threshold=similarity_threshold,
             embedding_model=self.embedding_generator.model_name
         )
 
-        print(f"Created {len(chunks)} chunks using imported chunking function")
+        print(f"Created {len(chunks)} chunks using processor pattern (Abstract Method + Factory)")
 
         # Prepare chunks for embedding
         chunk_texts = [chunk.text for chunk in chunks]

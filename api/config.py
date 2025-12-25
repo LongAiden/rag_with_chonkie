@@ -14,7 +14,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
-from document_processing.file_validator import FileValidator, FileValidationConfig
+from ingestion.validation.file_validator import FileValidator, FileValidationConfig
 from models.models import SimpleRAGResponse
 
 # Disable tokenizers parallelism warning

@@ -109,7 +109,7 @@ class DocumentProcessor(ABC):
         Raises:
             ValueError: If file is invalid or processing fails
         """
-        from .chunk_pdf_with_chonkie import chunk_with_semantic_chunker, get_page_number_for_position
+        from ingestion.chunking.semantic_chunker import chunk_with_semantic_chunker, get_page_number_for_position
 
         # Step 1: Validate (uses child's validation)
         if not self.validate_file(file_path):
