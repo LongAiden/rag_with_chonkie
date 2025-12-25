@@ -1,0 +1,100 @@
+# ============================================
+# Test Environment Dockerfile
+# ============================================
+# This Dockerfile creates a test environment with all dependencies
+# and test tools for running the RAG test suite.
+
+ARG PYTHON_VERSION=3.11
+
+# Stage 1: Build Python environment with dependencies
+FROM python:${PYTHON_VERSION}-slim AS builder
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=0 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+# Install build dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        g++ \
+        git \
+        curl \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv $VIRTUAL_ENV
+
+WORKDIR /build
+
+# Copy requirements files
+COPY deployment/requirements.txt ./requirements.txt
+COPY test/requirements-test.txt ./requirements-test.txt
+
+# Install main dependencies
+ARG PYTORCH_INDEX=https://download.pytorch.org/whl/cpu
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install --extra-index-url ${PYTORCH_INDEX} \
+    --use-pep517 \
+    --prefer-binary \
+    -r requirements.txt
+
+# Install test dependencies
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements-test.txt
+
+# Download spaCy model at build time
+RUN python -m spacy download en_core_web_sm --quiet || echo "spaCy model download skipped"
+
+# Stage 2: Runtime test image
+FROM python:${PYTHON_VERSION}-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# Runtime dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy prebuilt virtualenv from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy application code
+COPY api/ ./api/
+COPY ingestion/ ./ingestion/
+COPY retrieval/ ./retrieval/
+COPY models/ ./models/
+COPY graph_processing/ ./graph_processing/
+COPY worker/ ./worker/
+COPY config/ ./config/
+COPY migrations/ ./migrations/
+
+# Copy test files
+COPY test/ ./test/
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/logs /app/uploads /app/htmlcov
+
+# Run as non-root user for security
+RUN useradd -m -u 1000 testuser && \
+    chown -R testuser:testuser /app
+USER testuser
+
+# Default command runs all tests with coverage
+CMD ["pytest", "test/", "-v", "--cov=.", "--cov-report=html", "--cov-report=term"]

@@ -186,6 +186,48 @@ services:
     profiles:
       - dev  # Only start with: docker-compose --profile dev up
 
+  # ============================================
+  # Test Runner Service
+  # ============================================
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: rag_with_llama:test
+    container_name: rag_test
+    environment:
+      # Database connection (use service name 'postgres')
+      DB_HOST: postgres
+      DB_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+
+      # API Keys
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LOGFIRE_WRITE_TOKEN: ${LOGFIRE_WRITE_TOKEN:-}
+      LOGFIRE_READ_TOKEN: ${LOGFIRE_READ_TOKEN:-}
+
+      # LLM Configuration
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      ENTITY_EMBEDDING_MODEL: ${ENTITY_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      ENTITY_EMBEDDING_DIMENSION: 384
+
+      # Test environment
+      PYTHONPATH: /app
+    volumes:
+      # Mount test directory for easier test development
+      - ./test:/app/test
+      # Mount htmlcov for coverage reports
+      - ./htmlcov:/app/htmlcov
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rag_network
+    profiles:
+      - test  # Only start with: docker-compose --profile test up
+
 # ============================================
 # Networks
 # ============================================

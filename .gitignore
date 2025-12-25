@@ -28,3 +28,11 @@ uploads/*.pdf
 uploads/*.docx
 uploads/*.txt
 !uploads/.gitkeep
+
+# Test artifacts
+htmlcov/
+.coverage
+.pytest_cache/
+.tox/
+*.cover
+.hypothesis/

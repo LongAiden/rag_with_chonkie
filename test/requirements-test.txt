@@ -1,0 +1,40 @@
+# Testing Dependencies for RAG with Llama Project
+# Install with: pip install -r test/requirements-test.txt
+
+# Core testing framework
+pytest>=8.0.0
+pytest-asyncio>=0.23.0  # For async test support
+pytest-cov>=4.1.0  # For code coverage reports
+pytest-timeout>=2.2.0  # For test timeouts
+
+# Testing utilities
+pytest-mock>=3.12.0  # For mocking
+pytest-xdist>=3.5.0  # For parallel test execution
+pytest-html>=4.1.0  # For HTML test reports
+
+# Required dependencies from main project
+# (These should already be installed from deployment/requirements.txt,
+# but listed here for clarity and standalone test environment setup)
+
+# Database
+asyncpg>=0.29.0
+pgvector>=0.3.0
+
+# Embeddings
+sentence-transformers>=3.0.0
+numpy>=2.0.0,<3.0
+torch>=2.3.1,<2.6.0
+
+# LLM Integration
+google-generativeai>=0.8.0
+
+# Monitoring
+logfire
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+
+# Optional: For better test output and debugging
+colorama>=0.4.6  # Colored terminal output
+tabulate>=0.9.0  # Formatted table output
