@@ -106,6 +106,7 @@ class VectorStore:
                 text TEXT NOT NULL,
                 embedding vector(384),  -- Adjust dimension as needed
                 metadata JSONB,
+                entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
             """)

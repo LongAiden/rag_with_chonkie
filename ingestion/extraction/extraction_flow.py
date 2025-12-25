@@ -79,9 +79,15 @@ async def run_entity_extraction_for_document(
         extraction_service = await create_extraction_service(
             pool, table_name=table_name)
 
+        logfire.info(
+            "Starting entity extraction",
+            document_id=document_id,
+            table_name=table_name,
+        )
+
         extraction_result = await extraction_service.extract_from_document(
             document_id=uuid.UUID(document_id),
-            verbose=False
+            verbose=True  # Enable verbose logging to see what's happening
         )
 
         entities_extracted = extraction_result['total_entities']

@@ -304,6 +304,8 @@ JSON RESPONSE:
         async with self.db_pool.acquire() as conn:
             # Generate embedding for entity name
             embedding = self.embedding_model.encode(entity_name).tolist()
+            # Convert embedding to pgvector format string
+            embedding_str = '[' + ','.join(map(str, embedding)) + ']'
 
             # Check if entity already exists (by name and type)
             existing = await conn.fetchrow(
@@ -342,16 +344,16 @@ JSON RESPONSE:
                     VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING entity_id
                     """,
-                    entity_name, entity_type, confidence, embedding,
+                    entity_name, entity_type, confidence, embedding_str,
                     json.dumps(metadata), [chunk_id]
                 )
 
             # Update chunk with entity reference
             await conn.execute(
                 """
-                UPDATE chunks
+                UPDATE document_chunks
                 SET entity_ids = array_append(entity_ids, $1)
-                WHERE chunk_id = $2 AND NOT ($1 = ANY(entity_ids))
+                WHERE id = $2 AND NOT ($1 = ANY(entity_ids))
                 """,
                 entity_id, chunk_id
             )

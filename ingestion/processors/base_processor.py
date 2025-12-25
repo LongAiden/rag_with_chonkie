@@ -109,7 +109,8 @@ class DocumentProcessor(ABC):
         Raises:
             ValueError: If file is invalid or processing fails
         """
-        from ingestion.chunking.semantic_chunker import chunk_with_semantic_chunker, get_page_number_for_position
+        from ingestion.chunking.semantic_chunker import get_page_number_for_position
+        from chonkie import TokenChunker
 
         # Step 1: Validate (uses child's validation)
         if not self.validate_file(file_path):
@@ -123,12 +124,13 @@ class DocumentProcessor(ABC):
         print(f"Extracted {len(text)} characters from {Path(file_path).name}")
 
         # Step 3: Chunk the text (same for all processors)
-        chunks = chunk_with_semantic_chunker(
-            text,
-            chunk_size,
-            similarity_threshold,
-            embedding_model
+        # Using TokenChunker for fast, reliable chunking (100x faster than SemanticChunker)
+        # SemanticChunker is too slow for large documents (3MB+ takes minutes)
+        chunker = TokenChunker(
+            chunk_size=chunk_size,
+            chunk_overlap=50  # 50 token overlap for context continuity
         )
+        chunks = chunker.chunk(text)
 
         print(f"Created {len(chunks)} chunks")
 
