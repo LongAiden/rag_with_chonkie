@@ -316,7 +316,8 @@ class ChunkEmbeddingPipeline:
 
     async def process_document(self, file_path: str, chunk_size: int = 512,
                                similarity_threshold: float = 0.5,
-                               document_id: str = None, metadata: Dict = None) -> str:
+                               document_id: str = None, metadata: Dict = None,
+                               chunker_type: str = None) -> str:
         """
         Process a document: chunk using imported function, then embed and store.
 
@@ -350,7 +351,8 @@ class ChunkEmbeddingPipeline:
             file_path=str(file_path),
             chunk_size=chunk_size,
             similarity_threshold=similarity_threshold,
-            embedding_model=None  # Let Chonkie use default for chunking
+            embedding_model=None,  # Let Chonkie use default for chunking
+            chunker_type=chunker_type  # Pass through chunker selection
         )
 
         print(f"Created {len(chunks)} chunks using processor pattern (Abstract Method + Factory)")

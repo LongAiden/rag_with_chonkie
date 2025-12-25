@@ -86,7 +86,8 @@ class DocumentProcessor(ABC):
         file_path: str,
         chunk_size: int = 512,
         similarity_threshold: float = 0.5,
-        embedding_model=None
+        embedding_model=None,
+        chunker_type: str = None  # New parameter: "token", "recursive", or "semantic"
     ) -> List:
         """
         Template Method: Process document through standard workflow.
@@ -102,6 +103,8 @@ class DocumentProcessor(ABC):
             chunk_size: Maximum tokens per chunk
             similarity_threshold: Similarity threshold for semantic chunking
             embedding_model: Custom embedding model
+            chunker_type: Chunking strategy - "token", "recursive" (default), or "semantic"
+                         Can also be set via CHUNKER_TYPE environment variable
 
         Returns:
             List of chunks with page number metadata
@@ -110,7 +113,7 @@ class DocumentProcessor(ABC):
             ValueError: If file is invalid or processing fails
         """
         from ingestion.chunking.semantic_chunker import get_page_number_for_position
-        from chonkie import TokenChunker
+        from ingestion.chunking.chunker_factory import get_chunker
 
         # Step 1: Validate (uses child's validation)
         if not self.validate_file(file_path):
@@ -123,12 +126,15 @@ class DocumentProcessor(ABC):
 
         print(f"Extracted {len(text)} characters from {Path(file_path).name}")
 
-        # Step 3: Chunk the text (same for all processors)
-        # Using TokenChunker for fast, reliable chunking (100x faster than SemanticChunker)
-        # SemanticChunker is too slow for large documents (3MB+ takes minutes)
-        chunker = TokenChunker(
+        # Step 3: Chunk the text using the factory pattern
+        # Supports: token (fastest), recursive (default, balanced), semantic (best quality)
+        # Set via chunker_type parameter or CHUNKER_TYPE environment variable
+        chunker = get_chunker(
+            chunker_type=chunker_type,
             chunk_size=chunk_size,
-            chunk_overlap=50  # 50 token overlap for context continuity
+            chunk_overlap=50,
+            similarity_threshold=similarity_threshold,
+            embedding_model=embedding_model
         )
         chunks = chunker.chunk(text)
 

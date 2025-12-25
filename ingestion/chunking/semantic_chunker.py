@@ -197,7 +197,7 @@ def process_document(file_path, chunk_size=512, similarity_threshold=0.5, embedd
 # NEW: Refactored using Abstract Method Pattern
 # ============================================================================
 
-def process_document_with_processor(file_path, chunk_size=512, similarity_threshold=0.5, embedding_model=None):
+def process_document_with_processor(file_path, chunk_size=512, similarity_threshold=0.5, embedding_model=None, chunker_type=None):
     """
     Process a document using the Abstract Method pattern with automatic processor selection.
 
@@ -239,7 +239,8 @@ def process_document_with_processor(file_path, chunk_size=512, similarity_thresh
         file_path,
         chunk_size,
         similarity_threshold,
-        embedding_model
+        embedding_model,
+        chunker_type
     )
 
     return chunks
