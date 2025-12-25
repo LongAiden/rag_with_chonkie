@@ -149,6 +149,12 @@ async def delete_table_route(table_name: str):
     )
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# ===============================================
+# NOTE: Do not run this file directly!
+# Use Docker to start the application:
+#   docker compose up
+# ===============================================
+#
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -10,7 +10,6 @@ from typing import List, Dict, Optional
 
 from retrieval.utils import rerank_bm25
 from retrieval.llm_operations import generate_llm_response
-from ingestion.extraction.extraction_flow import get_db_pool
 from models.models import RAGResponse, RAGSource, RAGResponseMetadata
 
 
@@ -42,6 +41,8 @@ async def fetch_graph_entities_for_chunks(
         return {}
 
     try:
+        # Lazy import to avoid circular dependency
+        from ingestion.extraction.extraction_flow import get_db_pool
         pool = await get_db_pool(config)
     except Exception as pool_error:
         logfire.warn("Graph pool unavailable, skipping entity enrichment",

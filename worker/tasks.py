@@ -14,14 +14,14 @@ from worker.celery_app import celery_app
 
 async def _run_entity_extraction(document_id: str, table_name: str) -> Dict[str, Any]:
     # Import inside the task to avoid loading FastAPI app when the worker starts.
-    from api.app import (
-        run_entity_extraction_for_document,
-    )
+    from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
+    from api.app import config
 
     return await run_entity_extraction_for_document(
         document_id=document_id,
         filename=None,
         table_name=table_name,
+        config=config
     )
 
 
@@ -51,13 +51,10 @@ async def _process_upload(
     - embed chunks and store
     - run entity extraction inline
     """
-    from api.app import (
-        DEFAULT_CHUNKING_SIMILARITY,
-        config,
-        get_pipeline,
-        run_entity_extraction_for_document,
-        validate_upload_params,
-    )
+    from api.app import config, get_pipeline
+    from api.validators import validate_upload_params
+    from api.config import DEFAULT_CHUNKING_SIMILARITY
+    from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
 
     validate_upload_params(chunk_size, content_type)
     validation_result = config.file_validator.validate_file(temp_path)

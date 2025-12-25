@@ -93,27 +93,27 @@ def extract_text_from_docx(docx_path):
 def chunk_with_semantic_chunker(text, chunk_size=512, similarity_threshold=0.5, embedding_model=None):
     """
     Chunk text using Chonkie's SemanticChunker with custom embedding model.
+
+    Note: Chonkie 1.4.0+ API uses 'chunk_size' and 'threshold' parameters
+
     Args:
         text (str): Text to chunk
         chunk_size (int): Maximum tokens per chunk
-        similarity_threshold (float): Similarity threshold for semantic chunking
-        embedding_model: Custom embedding model (SentenceTransformer or similar)
+        similarity_threshold (float): Similarity threshold for semantic chunking (0-1)
+        embedding_model: Custom embedding model (string identifier or embedding instance)
+                        Defaults to "sentence-transformers/all-MiniLM-L6-v2" if None
     Returns:
         list: List of chunks
     """
-    if embedding_model:
-        chunker = SemanticChunker(
-            chunk_size=chunk_size,
-            similarity_threshold=similarity_threshold,
-            embedding_model=embedding_model
-        )
-    else:
-        # Use default embedding model
-        chunker = SemanticChunker(
-            chunk_size=chunk_size,
-            similarity_threshold=similarity_threshold
-        )
+    # Chonkie 1.4.0+ uses chunk_size and threshold parameters
+    # Use sentence-transformers model to avoid model2vec dependency
+    chunker_params = {
+        'chunk_size': chunk_size,
+        'threshold': similarity_threshold,
+        'embedding_model': embedding_model or "sentence-transformers/all-MiniLM-L6-v2"
+    }
 
+    chunker = SemanticChunker(**chunker_params)
     chunks = chunker.chunk(text)
     return chunks
 

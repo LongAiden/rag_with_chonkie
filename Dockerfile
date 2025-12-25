@@ -51,7 +51,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     VIRTUAL_ENV=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -67,8 +68,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy application code by module for better caching on code changes
-COPY document_processing/ ./document_processing/
 COPY api/ ./api/
+COPY ingestion/ ./ingestion/
+COPY retrieval/ ./retrieval/
 COPY models/ ./models/
 COPY graph_processing/ ./graph_processing/
 COPY worker/ ./worker/
@@ -88,5 +90,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Use reload only in dev-compose; production image stays leaner
-CMD ["uvicorn", "document_processing.full_pipeline_pgvector:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the FastAPI application using uvicorn
+# Note: --reload is not used in production for better performance
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]

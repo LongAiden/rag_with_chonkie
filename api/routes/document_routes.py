@@ -19,7 +19,7 @@ from api.validators import (
     celery_upload_enabled
 )
 from retrieval.search import perform_document_search
-from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
+# Lazy import to avoid circular dependency - imported in upload_and_process function
 from api.templates import (
     HOME_PAGE_HTML,
     SEARCH_RESULTS_HTML,
@@ -163,6 +163,9 @@ async def upload_and_process(
                         filename=file.filename)
 
             # Step: Extract entities and relationships from chunks
+            # Lazy import to avoid circular dependency
+            from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
+
             extraction_summary = {
                 "status": None,
                 "task_id": None,

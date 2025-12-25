@@ -342,11 +342,14 @@ class ChunkEmbeddingPipeline:
 
         # Use the new Abstract Method pattern processor for chunking with page numbers
         # Automatically selects the right processor (PDF, DOCX, TXT) based on file extension
+        # Note: Don't pass embedding_model to avoid Chonkie validation errors
+        # Chonkie will use its default embedding model for chunking similarity calculation
+        # We generate our own embeddings separately for vector storage
         chunks = process_document_with_processor(
             file_path=str(file_path),
             chunk_size=chunk_size,
             similarity_threshold=similarity_threshold,
-            embedding_model=self.embedding_generator.model_name
+            embedding_model=None  # Let Chonkie use default for chunking
         )
 
         print(f"Created {len(chunks)} chunks using processor pattern (Abstract Method + Factory)")

@@ -6,19 +6,11 @@ A production-ready Retrieval-Augmented Generation (RAG) system built with FastAP
 
 ### 1. Prerequisites
 
-**Docker Setup (Recommended - Works on All Platforms)**
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) installed
 - 8GB+ available RAM
 - Git
 
-**Manual Setup (Alternative)**
-- Python 3.11+
-- PostgreSQL 14+ with pgvector extension
-- Homebrew (for macOS)
-
 ### 2. Quick Setup
-
-#### Option A: Docker (Recommended - Mac, Windows, Linux)
 
 ```bash
 # 1. Clone the repository
@@ -59,22 +51,6 @@ docker compose restart app celery_worker
 
 # Dependency changes (slower - ~3-5 minutes)
 docker compose up --build
-```
-
-#### Option B: Manual Setup
-
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit .env with your credentials:
-POSTGRES_USER=your_username
-POSTGRES_PASSWORD=your_password
-POSTGRES_DB=rag_db
-GOOGLE_API_KEY=your_gemini_api_key
-
-# Run automated setup
-bash deployment/setup.sh
 ```
 
 ## 📁 Project Structure
@@ -154,13 +130,13 @@ rag_llama_index/
 
 ## 🚀 Usage
 
-### 1. Start the Application
-```bash
-cd document_processing
-python full_pipeline_pgvector.py
-```
-Access webUI at: `http://localhost:8000`
-Access FastAPI Swagger UI: `http://127.0.0.1:8000/docs`
+### 1. Access the Application
+
+After running `docker compose up`, access:
+- Web UI: `http://localhost:8000`
+- FastAPI Swagger UI: `http://localhost:8000/docs`
+- Health Check: `http://localhost:8000/health`
+- pgAdmin (optional): `http://localhost:5050` (start with `docker compose --profile dev up`)
 
 ### 2. Web Interface Usage
 1. **Upload Documents**: Select PDF/TXT files, configure chunking parameters
@@ -198,7 +174,24 @@ curl -X POST "http://localhost:8000/query" \
   -d '{"query": "machine learning", "limit": 5}'
 ```
 
-### 4. Logfire Usage:
+### 4. View Logs
+
+**Application logs:**
+```bash
+docker compose logs -f app
+```
+
+**Celery worker logs:**
+```bash
+docker compose logs -f celery_worker
+```
+
+**All services:**
+```bash
+docker compose logs -f
+```
+
+### 5. Logfire Usage:
 - Use Logfire to log steps from end to end
     <img src="./images/logfire_example.png" alt="Logfire" width="600">
 
@@ -249,20 +242,42 @@ curl -X POST "http://localhost:8000/query" \
 
 ## 🐛 Troubleshooting
 
-**PostgreSQL Issues:**
+**Services Not Starting:**
 ```bash
-brew services restart postgresql
-psql rag_db -c "CREATE EXTENSION vector;"
+# Check service status
+docker compose ps
+
+# View logs for specific service
+docker compose logs postgres
+docker compose logs app
+
+# Restart all services
+docker compose down
+docker compose up
 ```
 
 **Port Conflicts:**
 ```bash
-uvicorn full_pipeline_pgvector:app --port 8001
+# Check what's using port 8000
+lsof -i :8000
+
+# Change port in docker-compose.yml
+# Edit ports section: "8001:8000" instead of "8000:8000"
 ```
 
-**Dependencies:**
+**Database Issues:**
 ```bash
-pip install --upgrade -r requirements.txt
+# Reset database
+docker compose down -v  # Warning: This deletes all data
+docker compose up --build
+```
+
+**Clean Rebuild:**
+```bash
+# Remove all containers, volumes, and images
+docker compose down -v
+docker system prune -a
+docker compose up --build
 ```
 
 ## ⚠️ Known Issues
