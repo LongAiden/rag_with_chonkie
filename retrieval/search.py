@@ -30,6 +30,10 @@ async def fetch_graph_entities_for_chunks(
     Returns:
         Dict mapping chunk_id to list of entity information dicts
     """
+    logfire.info("Fetching graph entities for chunks",
+                num_chunks_requested=len(chunk_ids),
+                entities_per_chunk=per_chunk)
+
     valid_chunk_ids = []
     for chunk_id in chunk_ids:
         try:
@@ -38,6 +42,8 @@ async def fetch_graph_entities_for_chunks(
             continue
 
     if not valid_chunk_ids:
+        logfire.warn("No valid chunk IDs provided for graph enrichment",
+                    original_count=len(chunk_ids))
         return {}
 
     try:
@@ -80,33 +86,48 @@ async def fetch_graph_entities_for_chunks(
         WHERE rn <= $2
     """
 
-    try:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(query, valid_chunk_ids, per_chunk)
-    except Exception as graph_error:
-        logfire.error("Graph enrichment query failed", error=str(graph_error))
-        return {}
+    with logfire.span("graph_entity_query",
+                     num_chunks=len(valid_chunk_ids),
+                     entities_per_chunk=per_chunk):
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(query, valid_chunk_ids, per_chunk)
 
-    entity_map: Dict[str, List[Dict]] = {}
-    for row in rows:
-        metadata = row['metadata']
-        if metadata and not isinstance(metadata, dict):
-            try:
-                metadata = json.loads(metadata)
-            except (TypeError, ValueError):
-                metadata = {}
+            logfire.info("Graph entities fetched successfully",
+                        total_entities=len(rows),
+                        chunks_queried=len(valid_chunk_ids))
+        except Exception as graph_error:
+            logfire.error("Graph enrichment query failed", error=str(graph_error))
+            return {}
 
-        entity_info = {
-            'entity_id': str(row['entity_id']),
-            'name': row['entity_name'],
-            'type': row['entity_type'],
-            'confidence': float(row['confidence']) if row['confidence'] is not None else None,
-            'description': metadata.get('description') if isinstance(metadata, dict) else None
-        }
-        chunk_key = str(row['chunk_id'])
-        entity_map.setdefault(chunk_key, []).append(entity_info)
+        entity_map: Dict[str, List[Dict]] = {}
+        for row in rows:
+            metadata = row['metadata']
+            if metadata and not isinstance(metadata, dict):
+                try:
+                    metadata = json.loads(metadata)
+                except (TypeError, ValueError):
+                    metadata = {}
 
-    return entity_map
+            entity_info = {
+                'entity_id': str(row['entity_id']),
+                'name': row['entity_name'],
+                'type': row['entity_type'],
+                'confidence': float(row['confidence']) if row['confidence'] is not None else None,
+                'description': metadata.get('description') if isinstance(metadata, dict) else None
+            }
+            chunk_key = str(row['chunk_id'])
+            entity_map.setdefault(chunk_key, []).append(entity_info)
+
+        chunks_with_entities = len(entity_map)
+        total_entities_mapped = sum(len(entities) for entities in entity_map.values())
+
+        logfire.info("Graph entity mapping completed",
+                    chunks_with_entities=chunks_with_entities,
+                    total_entities=total_entities_mapped,
+                    avg_entities_per_chunk=round(total_entities_mapped / chunks_with_entities, 2) if chunks_with_entities > 0 else 0)
+
+        return entity_map
 
 
 async def perform_document_search(
@@ -201,40 +222,67 @@ async def perform_document_search(
             )
 
         # Step 2: Enrich results with knowledge graph entities
-        chunk_ids = [r.get('chunk_id') for r in results if r.get('chunk_id')]
-        graph_entities_map = await fetch_graph_entities_for_chunks(chunk_ids, config)
+        with logfire.span("graph_enrichment",
+                         chunks_to_enrich=len(results)):
+            chunk_ids = [r.get('chunk_id') for r in results if r.get('chunk_id')]
 
-        for result in results:
-            graph_entities = graph_entities_map.get(result.get('chunk_id', ''), [])
-            if graph_entities:
-                metadata = result.get('metadata') or {}
-                metadata['graph_entities'] = graph_entities
-                result['metadata'] = metadata
-                result['graph_entities'] = graph_entities
+            logfire.info("Starting graph enrichment for chunks",
+                        num_chunks=len(chunk_ids))
+
+            graph_entities_map = await fetch_graph_entities_for_chunks(chunk_ids, config)
+
+            enriched_chunks = 0
+            total_entities_added = 0
+
+            for result in results:
+                graph_entities = graph_entities_map.get(result.get('chunk_id', ''), [])
+                if graph_entities:
+                    metadata = result.get('metadata') or {}
+                    metadata['graph_entities'] = graph_entities
+                    result['metadata'] = metadata
+                    result['graph_entities'] = graph_entities
+                    enriched_chunks += 1
+                    total_entities_added += len(graph_entities)
+
+            logfire.info("Graph enrichment completed",
+                        enriched_chunks=enriched_chunks,
+                        total_chunks=len(results),
+                        enrichment_rate=round(enriched_chunks / len(results) * 100, 1) if results else 0,
+                        total_entities_added=total_entities_added,
+                        avg_entities_per_enriched_chunk=round(total_entities_added / enriched_chunks, 2) if enriched_chunks > 0 else 0)
 
         # Step 3: Build context from retrieved chunks with page numbers + graph info
-        context_parts = []
-        for i, result in enumerate(results):
-            page_info = ""
-            if result.get('metadata') and result['metadata'].get('page_number'):
-                page_info = f" (Page {result['metadata']['page_number']})"
-            context_parts.append(
-                f"[Source {i+1}{page_info}]: {result['text']}")
+        with logfire.span("context_building"):
+            context_parts = []
+            for i, result in enumerate(results):
+                page_info = ""
+                if result.get('metadata') and result['metadata'].get('page_number'):
+                    page_info = f" (Page {result['metadata']['page_number']})"
+                context_parts.append(
+                    f"[Source {i+1}{page_info}]: {result['text']}")
 
-        # Add graph entity information to context BEFORE joining
-        for i, result in enumerate(results):
-            if result.get('graph_entities'):
-                entity_summary = ", ".join(
-                    f"{entity['name']} ({entity['type']})"
-                    for entity in result['graph_entities']
-                )
-                if entity_summary:
-                    context_parts.append(
-                        f"[Graph Entities for Source {i+1}]: {entity_summary}"
+            # Add graph entity information to context BEFORE joining
+            graph_context_added = 0
+            for i, result in enumerate(results):
+                if result.get('graph_entities'):
+                    entity_summary = ", ".join(
+                        f"{entity['name']} ({entity['type']})"
+                        for entity in result['graph_entities']
                     )
+                    if entity_summary:
+                        context_parts.append(
+                            f"[Graph Entities for Source {i+1}]: {entity_summary}"
+                        )
+                        graph_context_added += 1
 
-        # Create final context string AFTER all parts are added
-        context = "\n\n".join(context_parts)
+            # Create final context string AFTER all parts are added
+            context = "\n\n".join(context_parts)
+
+            logfire.info("Context built with graph integration",
+                        total_context_parts=len(context_parts),
+                        graph_sections_added=graph_context_added,
+                        context_length=len(context),
+                        graph_integrated=graph_context_added > 0)
 
         # Step 4: Generate response with LLM (now includes graph entities)
         llm_response = await generate_llm_response(query, context, results, config.agent)

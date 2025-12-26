@@ -150,7 +150,7 @@ class GraphConfig(BaseSettings):
     batch_size: int = Field(
         default=10,
         ge=1,
-        le=100,
+        le=200,
         description="Number of chunks to process in batch extraction"
     )
     enable_parallel_extraction: bool = Field(

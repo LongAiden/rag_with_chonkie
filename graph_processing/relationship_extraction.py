@@ -3,6 +3,7 @@ Relationship extraction between entities using LLM.
 """
 
 import logging
+import logfire
 import json
 from typing import List, Dict, Any
 from uuid import UUID
@@ -11,6 +12,7 @@ from google import generativeai as genai
 
 from .entity_types import RelationshipType, RELATIONSHIP_TYPE_DESCRIPTIONS
 from .retry_utils import retry_with_backoff
+from .json_utils import JSONParser
 from config.graph_config import get_graph_config
 
 logger = logging.getLogger(__name__)
@@ -154,15 +156,21 @@ class RelationshipExtractor:
 
         try:
             # Call Gemini once for all chunks
-            response = self._call_gemini_with_retry(prompt)
-            batch_text = response.text
+            with logfire.span("batch_relationship_extraction",
+                            num_chunks=len(valid_payloads)):
+                response = self._call_gemini_with_retry(prompt)
+                batch_text = response.text
 
-            # Parse batch response
-            parsed_relationships = self._parse_batch_relationships(
-                batch_text,
-                valid_payloads,
-                confidence_threshold
-            )
+                logfire.info("Gemini response received",
+                           response_length=len(batch_text),
+                           num_chunks=len(valid_payloads))
+
+                # Parse batch response
+                parsed_relationships = self._parse_batch_relationships(
+                    batch_text,
+                    valid_payloads,
+                    confidence_threshold
+                )
 
             # Store relationships for each chunk
             stored_results: Dict[UUID, List[Dict[str, Any]]] = {}
@@ -209,33 +217,34 @@ class RelationshipExtractor:
             for e in entities
         ])
 
-        prompt = f"""You are an expert in Machine Learning and Deep Learning. Identify relationships between the given entities based on the text.
+        prompt = f"""Extract ML/DL entity relationships as valid JSON only.
 
 RELATIONSHIP TYPES:
 {relationship_types}
 
-ENTITIES IN TEXT:
+ENTITIES:
 {entity_list}
 
-INSTRUCTIONS:
-1. Identify relationships between the entities listed above
-2. For each relationship, provide:
-   - source: Name of source entity (must match entity list)
-   - target: Name of target entity (must match entity list)
-   - type: One of the relationship types listed above
-   - confidence: Your confidence score (0.0 to 1.0)
-   - description: Brief explanation of the relationship
+CRITICAL JSON RULES:
+- Return ONLY JSON array starting with [ ending with ]
+- NO explanations, NO markdown, NO extra text
+- Use double quotes for strings
+- Add commas between objects
+- Keep descriptions under 50 characters
+- No brackets in descriptions
 
-3. Return ONLY valid JSON array format:
+REQUIRED FORMAT:
 [
-  {{"source": "ResNet", "target": "ImageNet", "type": "TRAINED_ON", "confidence": 0.9, "description": "ResNet models are commonly trained on ImageNet dataset"}},
-  {{"source": "Dropout", "target": "Overfitting", "type": "MITIGATES", "confidence": 0.85, "description": "Dropout technique helps prevent overfitting"}}
+  {{"source": "ResNet", "target": "ImageNet", "type": "TRAINED_ON", "confidence": 0.9, "description": "ResNet trained on ImageNet"}},
+  {{"source": "Dropout", "target": "Overfitting", "type": "MITIGATES", "confidence": 0.85, "description": "Dropout prevents overfitting"}}
 ]
 
-TEXT TO ANALYZE:
+TEXT:
 {text}
 
-EXTRACTED RELATIONSHIPS (JSON only):"""
+JSON ARRAY (no other text):
+```json
+"""
 
         return prompt
 
@@ -270,42 +279,41 @@ EXTRACTED RELATIONSHIPS (JSON only):"""
 
         chunk_text_block = "\n".join(chunk_sections)
 
-        prompt = f"""You are an expert ML/DL relationship extractor. Analyze each chunk independently and extract relationships between the entities listed for that chunk.
+        prompt = f"""You are a JSON generator. Extract ML/DL relationships and return ONLY valid JSON.
 
 RELATIONSHIP TYPES:
 {relationship_types}
 
-INSTRUCTIONS:
-1. Process each chunk separately. Do not merge information between chunks.
-2. Only extract relationships between entities listed for each specific chunk.
-3. For each chunk, return a JSON object with:
-   - chunk_id: The chunk ID provided
-   - relationships: List of relationships with this schema:
-     * source: Name of source entity (must match entity list for this chunk)
-     * target: Name of target entity (must match entity list for this chunk)
-     * type: One of the relationship types listed above
-     * confidence: Your confidence score (0.0 to 1.0)
-     * description: Brief explanation of the relationship
+CRITICAL RULES - VALID JSON ONLY:
+1. Return ONLY a JSON array, NO explanations, NO markdown, NO extra text
+2. Use double quotes for ALL strings
+3. Add commas between ALL objects and fields
+4. Do NOT use brackets [ ] inside description strings
+5. Keep descriptions under 50 characters to avoid errors
+6. If unsure, return empty relationships array for that chunk
 
-4. Respond ONLY with valid JSON array. Example:
+EXACT FORMAT REQUIRED:
 [
   {{
     "chunk_id": "chunk-123",
     "relationships": [
-      {{"source": "ResNet", "target": "ImageNet", "type": "TRAINED_ON", "confidence": 0.9, "description": "ResNet trained on ImageNet"}},
-      {{"source": "Dropout", "target": "Overfitting", "type": "MITIGATES", "confidence": 0.85, "description": "Dropout prevents overfitting"}}
+      {{"source": "ResNet", "target": "ImageNet", "type": "TRAINED_ON", "confidence": 0.9, "description": "ResNet trained on ImageNet"}}
     ]
-  }},
-  {{
-    "chunk_id": "chunk-456",
-    "relationships": []
   }}
 ]
 
-CHUNKS:
+VALIDATION CHECKLIST:
+✓ Starts with [ and ends with ]
+✓ All strings use double quotes "
+✓ Commas between all objects
+✓ No trailing commas before }} or ]]
+✓ No explanatory text before or after JSON
+
+CHUNKS TO PROCESS:
 {chunk_text_block}
 
-JSON RESPONSE:
+RESPOND WITH VALID JSON ARRAY ONLY (no other text):
+```json
 """
         return prompt
 
@@ -321,17 +329,21 @@ JSON RESPONSE:
         Returns:
             Dict mapping chunk_id (as string) to list of relationship dicts
         """
-        import re
-
         try:
-            # Extract JSON array from response
-            json_match = re.search(r'\[.*\]', batch_text, re.DOTALL)
-            if not json_match:
-                logger.warning("No JSON array found in batch relationship response")
+            # Use robust JSON parser with multiple fallback strategies
+            batch_data = JSONParser.parse_with_fallback(
+                text=batch_text,
+                expected_type="array",
+                context="batch_relationships"
+            )
+
+            if not batch_data:
+                logfire.warn("No relationships found in batch response",
+                           response_length=len(batch_text))
                 return {}
 
-            batch_json = json_match.group(0)
-            batch_data = json.loads(batch_json)
+            logfire.info("Batch relationships parsed successfully",
+                       num_chunks_in_response=len(batch_data) if isinstance(batch_data, list) else 0)
 
             # Create entity maps for each chunk
             chunk_entity_maps = {}
@@ -387,9 +399,16 @@ JSON RESPONSE:
 
                 results[chunk_id] = valid_relationships
 
+            logfire.info("Batch relationship parsing completed",
+                        chunks_with_relationships=len([r for r in results.values() if r]),
+                        total_relationships=sum(len(r) for r in results.values()))
+
             return results
 
         except Exception as e:
+            logfire.error("Error parsing batch relationships",
+                        error=str(e),
+                        error_type=type(e).__name__)
             logger.error(f"Error parsing batch relationships: {e}")
             return {}
 
@@ -400,17 +419,18 @@ JSON RESPONSE:
         confidence_threshold: float
     ) -> List[Dict]:
         """Parse relationships from LLM response."""
-        import re
-
         try:
             # Create entity name to ID mapping
             entity_map = {e['name']: e.get('entity_id') for e in entities}
 
-            # Try to extract JSON from response
-            json_match = re.search(r'\[.*\]', relationships_text, re.DOTALL)
-            if json_match:
-                relationships_json = json_match.group(0)
-                relationships = json.loads(relationships_json)
+            # Use robust JSON parser
+            relationships = JSONParser.parse_with_fallback(
+                text=relationships_text,
+                expected_type="array",
+                context="single_chunk_relationships"
+            )
+
+            if relationships:
 
                 # Filter and validate relationships
                 valid_relationships = []
