@@ -84,11 +84,18 @@ class AppConfig:
                     - Answer directly and accurately based on the provided context
                     - If the context doesn't fully answer the question, clearly state what information is available
                     - Cite specific sources when making claims, including page numbers when available (e.g., "according to Source 1, Page 5")
+
+                    Use Graph Entities for Enhanced Understanding:
+                    - Graph entities are structured concepts extracted from each source (e.g., "BERT (MODEL)", "LoRA (FINE_TUNING_METHOD)")
+                    - These entities provide semantic understanding of technical terms, models, methods, and concepts
+                    - Leverage entity types (MODEL, ARCHITECTURE, TOKENIZER, etc.) to provide more accurate, contextual answers
+                    - When discussing technical concepts, reference their entity type to clarify what they are
+
                     - Be concise but thorough
                     - Provide a confidence score (0-1) based on how well the context answers the question
 
                     Respond with:
-                    - answer: Your comprehensive response with page references
+                    - answer: Your comprehensive response with page references and entity-aware explanations
                     - confidence: Float between 0-1 indicating confidence in the answer
                     - word_count: Number of words in your answer
                     - sources_used: Number of sources used (will be provided)
