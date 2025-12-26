@@ -11,6 +11,8 @@ import asyncpg
 from google import generativeai as genai
 
 from .entity_types import EntityType, ENTITY_TYPE_DESCRIPTIONS
+from .retry_utils import retry_with_backoff
+from config.graph_config import get_graph_config
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,39 @@ class EntityExtractor:
         self.model = genai.GenerativeModel(self.gemini_model)
         self.valid_entity_types = {et.value for et in EntityType}
 
+        # Load retry configuration
+        config = get_graph_config()
+        self.max_retries = config.gemini_max_retries
+        self.retry_initial_delay = config.gemini_retry_initial_delay
+        self.retry_max_delay = config.gemini_retry_max_delay
+        self.retry_exponential_base = config.gemini_retry_exponential_base
+        self.rate_limit_pause = config.gemini_rate_limit_pause
+
+    def _call_gemini_with_retry(self, prompt: str) -> Any:
+        """
+        Call Gemini API with retry logic and exponential backoff.
+
+        Args:
+            prompt: The prompt to send to Gemini
+
+        Returns:
+            Gemini response object
+
+        Raises:
+            EntityExtractionError: If all retries are exhausted
+        """
+        @retry_with_backoff(
+            max_retries=self.max_retries,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+            exponential_base=self.retry_exponential_base,
+            rate_limit_pause=self.rate_limit_pause
+        )
+        def _call():
+            return self.model.generate_content(prompt)
+
+        return _call()
+
     async def extract_entities_from_chunk(
         self,
         chunk_id: UUID,
@@ -58,7 +93,7 @@ class EntityExtractor:
         prompt = self._create_extraction_prompt(chunk_text)
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self._call_gemini_with_retry(prompt)
             entities_text = response.text
             entities = self._parse_entities(entities_text, confidence_threshold)
             stored_entities = await self._store_entities(chunk_id, entities)
@@ -92,7 +127,7 @@ class EntityExtractor:
         prompt = self._create_batch_prompt(chunk_payloads)
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self._call_gemini_with_retry(prompt)
             batch_text = response.text
         except Exception as exc:
             message = self._format_model_error(exc)

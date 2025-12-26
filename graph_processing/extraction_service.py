@@ -6,6 +6,7 @@ data when documents are uploaded and chunked.
 """
 
 import asyncpg
+import logging
 import os
 from typing import List, Dict, Optional, Any
 from uuid import UUID
@@ -14,6 +15,8 @@ from sentence_transformers import SentenceTransformer
 from config.graph_config import get_graph_config
 from graph_processing.entity_extraction import EntityExtractor, EntityExtractionError
 from graph_processing.relationship_extraction import RelationshipExtractor
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractionService:
@@ -188,6 +191,7 @@ class ExtractionService:
             ]
 
             try:
+                # Batch extract entities
                 batch_results = await self.entity_extractor.extract_entities_for_batch(
                     chunk_payloads=chunk_payloads,
                     confidence_threshold=self.entity_threshold
@@ -196,33 +200,44 @@ class ExtractionService:
                 # Propagate Gemini quota/rate limit errors to caller
                 raise
 
+            # Prepare relationship extraction payloads
+            relationship_payloads = []
             for chunk in batch:
-                processed_count += 1
                 chunk_id = chunk['id']
                 chunk_text = chunk['text']
                 entities = batch_results.get(chunk_id, [])
+
+                if len(entities) >= 2:
+                    relationship_payloads.append({
+                        'chunk_id': chunk_id,
+                        'chunk_text': chunk_text,
+                        'entities': entities
+                    })
+
+            # Batch extract relationships for all chunks at once
+            try:
+                relationship_results = await self.rel_extractor.extract_relationships_for_batch(
+                    chunk_payloads=relationship_payloads,
+                    confidence_threshold=self.relationship_threshold
+                )
+            except Exception as exc:
+                logger.error(f"Batch relationship extraction failed: {exc}")
+                relationship_results = {}
+
+            # Count results and report progress
+            for chunk in batch:
+                processed_count += 1
+                chunk_id = chunk['id']
+                entities = batch_results.get(chunk_id, [])
+                relationships = relationship_results.get(chunk_id, [])
+
                 total_entities += len(entities)
+                total_relationships += len(relationships)
+                successful += 1
 
-                try:
-                    relationships = []
-                    if len(entities) >= 2:
-                        relationships = await self.rel_extractor.extract_relationships_from_chunk(
-                            chunk_id=chunk_id,
-                            chunk_text=chunk_text,
-                            entities=entities,
-                            confidence_threshold=self.relationship_threshold
-                        )
-
-                    total_relationships += len(relationships)
-                    successful += 1
-
-                    if verbose:
-                        print(f"  [{processed_count}/{total_available}] "
-                              f"✓ {len(entities)} entities, {len(relationships)} relationships")
-                except Exception as exc:
-                    failed += 1
-                    if verbose:
-                        print(f"  [{processed_count}/{total_available}] ✗ Relationship extraction failed: {exc}")
+                if verbose:
+                    print(f"  [{processed_count}/{total_available}] "
+                          f"✓ {len(entities)} entities, {len(relationships)} relationships")
 
         return {
             'total_chunks': total_chunks,

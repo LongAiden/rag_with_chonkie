@@ -70,19 +70,7 @@ def get_chunker(
     elif chunker_type == ChunkerType.RECURSIVE.value:
         print(f"Using RecursiveChunker (balanced, respects boundaries)")
         return RecursiveChunker(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=[
-                "\n\n",  # Paragraphs (highest priority)
-                "\n",    # Line breaks
-                ". ",    # Sentences
-                "! ",
-                "? ",
-                "; ",
-                ", ",    # Clauses
-                " ",     # Words
-                ""       # Characters (last resort)
-            ]
+            chunk_size=chunk_size
         )
 
     elif chunker_type == ChunkerType.SEMANTIC.value:

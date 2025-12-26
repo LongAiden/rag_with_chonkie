@@ -222,14 +222,14 @@ HOME_PAGE_HTML = """
                 const result = await response.json();
 
                 if (response.ok) {
-                    showNotification(`? Document "${result.filename}" uploaded and processed successfully! Document ID: ${result.document_id.substring(0,8)}...`, 'success');
+                    showNotification(`Document "${result.filename}" uploaded and processed successfully! Document ID: ${result.document_id.substring(0,8)}...`, 'success');
                     this.reset(); // Clear the form
                     hydratePasswordInputs();
                 } else {
-                    showNotification(`? Upload failed: ${result.detail}`, 'error');
+                    showNotification(`Upload failed: ${result.detail}`, 'error');
                 }
             } catch (error) {
-                showNotification(`? Upload failed: ${error.message}`, 'error');
+                showNotification(`Upload failed: ${error.message}`, 'error');
             } finally {
                 // Restore button
                 submitButton.textContent = originalText;
@@ -246,9 +246,9 @@ HOME_PAGE_HTML = """
         // Check for URL parameters to show notifications (if redirected)
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('upload') === 'success') {
-            showNotification('? Document uploaded and processed successfully!', 'success');
+            showNotification('Document uploaded and processed successfully!', 'success');
         } else if (urlParams.get('upload') === 'error') {
-            showNotification('? Upload failed. Please try again.', 'error');
+            showNotification('Upload failed. Please try again.', 'error');
         }
     </script>
 </body>

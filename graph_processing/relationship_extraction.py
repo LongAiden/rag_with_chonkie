@@ -10,6 +10,8 @@ import asyncpg
 from google import generativeai as genai
 
 from .entity_types import RelationshipType, RELATIONSHIP_TYPE_DESCRIPTIONS
+from .retry_utils import retry_with_backoff
+from config.graph_config import get_graph_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,36 @@ class RelationshipExtractor:
         genai.configure(api_key=gemini_api_key)
         self.gemini_model = gemini_model or "gemini-2.5-flash"
         self.model = genai.GenerativeModel(self.gemini_model)
+
+        # Load retry configuration
+        config = get_graph_config()
+        self.max_retries = config.gemini_max_retries
+        self.retry_initial_delay = config.gemini_retry_initial_delay
+        self.retry_max_delay = config.gemini_retry_max_delay
+        self.retry_exponential_base = config.gemini_retry_exponential_base
+        self.rate_limit_pause = config.gemini_rate_limit_pause
+
+    def _call_gemini_with_retry(self, prompt: str) -> Any:
+        """
+        Call Gemini API with retry logic and exponential backoff.
+
+        Args:
+            prompt: The prompt to send to Gemini
+
+        Returns:
+            Gemini response object
+        """
+        @retry_with_backoff(
+            max_retries=self.max_retries,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+            exponential_base=self.retry_exponential_base,
+            rate_limit_pause=self.rate_limit_pause
+        )
+        def _call():
+            return self.model.generate_content(prompt)
+
+        return _call()
 
     async def extract_relationships_from_chunk(
         self,
@@ -52,7 +84,7 @@ class RelationshipExtractor:
 
         try:
             # Call Gemini to extract relationships
-            response = self.model.generate_content(prompt)
+            response = self._call_gemini_with_retry(prompt)
             relationships_text = response.text
 
             # Parse the response
@@ -84,6 +116,85 @@ class RelationshipExtractor:
         except Exception as e:
             logger.error(f"Error extracting relationships: {e}")
             return []
+
+    async def extract_relationships_for_batch(
+        self,
+        chunk_payloads: List[Dict[str, Any]],
+        confidence_threshold: float = 0.6
+    ) -> Dict[UUID, List[Dict[str, Any]]]:
+        """
+        Extract relationships for multiple chunks in a single Gemini request.
+
+        Args:
+            chunk_payloads: List of {
+                'chunk_id': UUID,
+                'chunk_text': str,
+                'entities': List[Dict]
+            }
+            confidence_threshold: Minimum confidence score
+
+        Returns:
+            Dict mapping chunk_id to list of stored relationship dicts
+        """
+        if not chunk_payloads:
+            return {}
+
+        # Filter chunks with >= 2 entities
+        valid_payloads = [
+            p for p in chunk_payloads
+            if len(p.get('entities', [])) >= 2
+        ]
+
+        if not valid_payloads:
+            logger.info("No chunks with sufficient entities for batch relationship extraction")
+            return {p['chunk_id']: [] for p in chunk_payloads}
+
+        # Create batch prompt
+        prompt = self._create_batch_extraction_prompt(valid_payloads)
+
+        try:
+            # Call Gemini once for all chunks
+            response = self._call_gemini_with_retry(prompt)
+            batch_text = response.text
+
+            # Parse batch response
+            parsed_relationships = self._parse_batch_relationships(
+                batch_text,
+                valid_payloads,
+                confidence_threshold
+            )
+
+            # Store relationships for each chunk
+            stored_results: Dict[UUID, List[Dict[str, Any]]] = {}
+
+            for payload in chunk_payloads:
+                chunk_id = payload['chunk_id']
+                relationships = parsed_relationships.get(str(chunk_id), [])
+
+                stored_rels = []
+                for rel_data in relationships:
+                    relationship_id = await self._store_relationship(
+                        chunk_id=chunk_id,
+                        source_entity_id=rel_data['source_entity_id'],
+                        target_entity_id=rel_data['target_entity_id'],
+                        relationship_type=rel_data['type'],
+                        confidence=rel_data['confidence'],
+                        metadata=rel_data.get('metadata', {})
+                    )
+                    stored_rels.append({
+                        'relationship_id': relationship_id,
+                        **rel_data
+                    })
+
+                stored_results[chunk_id] = stored_rels
+
+            logger.info(f"Batch extracted relationships for {len(valid_payloads)} chunks")
+            return stored_results
+
+        except Exception as e:
+            logger.error(f"Error in batch relationship extraction: {e}")
+            # Return empty results for all chunks
+            return {p['chunk_id']: [] for p in chunk_payloads}
 
     def _create_extraction_prompt(self, text: str, entities: List[Dict]) -> str:
         """Create prompt for relationship extraction."""
@@ -127,6 +238,160 @@ TEXT TO ANALYZE:
 EXTRACTED RELATIONSHIPS (JSON only):"""
 
         return prompt
+
+    def _create_batch_extraction_prompt(
+        self,
+        chunk_payloads: List[Dict[str, Any]]
+    ) -> str:
+        """Create prompt for batched relationship extraction."""
+        relationship_types = "\n".join([
+            f"- {rt.value}: {desc}"
+            for rt, desc in RELATIONSHIP_TYPE_DESCRIPTIONS.items()
+        ])
+
+        # Create sections for each chunk
+        chunk_sections = []
+        for payload in chunk_payloads:
+            chunk_id = payload['chunk_id']
+            chunk_text = payload.get('chunk_text', '')
+            entities = payload.get('entities', [])
+
+            # Format entities for this chunk
+            entity_list = "\n".join([
+                f"  - {e['name']} ({e['type']}, ID: {e.get('entity_id', 'N/A')})"
+                for e in entities
+            ])
+
+            chunk_sections.append(
+                f"CHUNK ID: {chunk_id}\n"
+                f"ENTITIES:\n{entity_list}\n"
+                f"TEXT:\n{chunk_text}\n"
+            )
+
+        chunk_text_block = "\n".join(chunk_sections)
+
+        prompt = f"""You are an expert ML/DL relationship extractor. Analyze each chunk independently and extract relationships between the entities listed for that chunk.
+
+RELATIONSHIP TYPES:
+{relationship_types}
+
+INSTRUCTIONS:
+1. Process each chunk separately. Do not merge information between chunks.
+2. Only extract relationships between entities listed for each specific chunk.
+3. For each chunk, return a JSON object with:
+   - chunk_id: The chunk ID provided
+   - relationships: List of relationships with this schema:
+     * source: Name of source entity (must match entity list for this chunk)
+     * target: Name of target entity (must match entity list for this chunk)
+     * type: One of the relationship types listed above
+     * confidence: Your confidence score (0.0 to 1.0)
+     * description: Brief explanation of the relationship
+
+4. Respond ONLY with valid JSON array. Example:
+[
+  {{
+    "chunk_id": "chunk-123",
+    "relationships": [
+      {{"source": "ResNet", "target": "ImageNet", "type": "TRAINED_ON", "confidence": 0.9, "description": "ResNet trained on ImageNet"}},
+      {{"source": "Dropout", "target": "Overfitting", "type": "MITIGATES", "confidence": 0.85, "description": "Dropout prevents overfitting"}}
+    ]
+  }},
+  {{
+    "chunk_id": "chunk-456",
+    "relationships": []
+  }}
+]
+
+CHUNKS:
+{chunk_text_block}
+
+JSON RESPONSE:
+"""
+        return prompt
+
+    def _parse_batch_relationships(
+        self,
+        batch_text: str,
+        chunk_payloads: List[Dict[str, Any]],
+        confidence_threshold: float
+    ) -> Dict[str, List[Dict]]:
+        """
+        Parse batched relationship extraction response.
+
+        Returns:
+            Dict mapping chunk_id (as string) to list of relationship dicts
+        """
+        import re
+
+        try:
+            # Extract JSON array from response
+            json_match = re.search(r'\[.*\]', batch_text, re.DOTALL)
+            if not json_match:
+                logger.warning("No JSON array found in batch relationship response")
+                return {}
+
+            batch_json = json_match.group(0)
+            batch_data = json.loads(batch_json)
+
+            # Create entity maps for each chunk
+            chunk_entity_maps = {}
+            for payload in chunk_payloads:
+                chunk_id = str(payload['chunk_id'])
+                entities = payload.get('entities', [])
+                chunk_entity_maps[chunk_id] = {
+                    e['name']: e.get('entity_id') for e in entities
+                }
+
+            # Parse relationships for each chunk
+            results = {}
+            for chunk_result in batch_data:
+                chunk_id = str(chunk_result.get('chunk_id', ''))
+                relationships = chunk_result.get('relationships', [])
+
+                if chunk_id not in chunk_entity_maps:
+                    continue
+
+                entity_map = chunk_entity_maps[chunk_id]
+                valid_relationships = []
+
+                for rel in relationships:
+                    confidence = rel.get('confidence', 0)
+                    if confidence < confidence_threshold:
+                        continue
+
+                    # Validate relationship type
+                    rel_type = rel.get('type', '').upper()
+                    if rel_type not in [rt.value for rt in RelationshipType]:
+                        continue
+
+                    source_name = rel.get('source')
+                    target_name = rel.get('target')
+
+                    # Check if entities exist in this chunk's entity map
+                    if source_name in entity_map and target_name in entity_map:
+                        source_id = entity_map[source_name]
+                        target_id = entity_map[target_name]
+
+                        if source_id and target_id and source_id != target_id:
+                            valid_relationships.append({
+                                'source_entity_id': source_id,
+                                'target_entity_id': target_id,
+                                'type': rel_type,
+                                'confidence': confidence,
+                                'metadata': {
+                                    'description': rel.get('description', ''),
+                                    'source_name': source_name,
+                                    'target_name': target_name
+                                }
+                            })
+
+                results[chunk_id] = valid_relationships
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Error parsing batch relationships: {e}")
+            return {}
 
     def _parse_relationships(
         self,

@@ -26,8 +26,48 @@ class GraphConfig(BaseSettings):
         description="Gemini API key for entity/relationship extraction"
     )
     gemini_model: str = Field(
-        default=os.getenv("GEMINI_MODEL", ""),
+        default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         description="Gemini model to use for extraction"
+    )
+
+    # ============================================
+    # API Retry & Timeout Configuration
+    # ============================================
+    gemini_request_timeout: float = Field(
+        default=60.0,
+        ge=10.0,
+        le=300.0,
+        description="Timeout for Gemini API requests in seconds"
+    )
+    gemini_max_retries: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum number of retry attempts for failed API calls"
+    )
+    gemini_retry_initial_delay: float = Field(
+        default=2.0,
+        ge=0.5,
+        le=60.0,
+        description="Initial delay before first retry in seconds"
+    )
+    gemini_retry_max_delay: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=300.0,
+        description="Maximum delay between retries in seconds"
+    )
+    gemini_retry_exponential_base: float = Field(
+        default=2.0,
+        ge=1.0,
+        le=10.0,
+        description="Exponential backoff base multiplier"
+    )
+    gemini_rate_limit_pause: float = Field(
+        default=65.0,
+        ge=10.0,
+        le=600.0,
+        description="Pause duration when rate limit is hit (seconds)"
     )
 
     # ============================================
@@ -258,6 +298,14 @@ DEFAULT_MAX_HOPS=2
 # LLM Configuration
 GOOGLE_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-2.5-flash
+
+# API Retry & Timeout (NEW - for handling rate limits)
+GEMINI_REQUEST_TIMEOUT=60.0           # Timeout per API request (seconds)
+GEMINI_MAX_RETRIES=3                  # Max retry attempts on failure
+GEMINI_RETRY_INITIAL_DELAY=2.0        # Initial delay before retry (seconds)
+GEMINI_RETRY_MAX_DELAY=60.0           # Max delay between retries (seconds)
+GEMINI_RETRY_EXPONENTIAL_BASE=2.0     # Exponential backoff multiplier
+GEMINI_RATE_LIMIT_PAUSE=65.0          # Pause when rate limit hit (seconds)
 
 # Performance
 BATCH_SIZE=10
