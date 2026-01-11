@@ -3,8 +3,14 @@ Service for extracting entities and relationships from document chunks.
 
 This module provides functionality to automatically extract knowledge graph
 data when documents are uploaded and chunked.
+
+Features:
+- Async non-blocking LLM calls with semaphore-based concurrency control
+- Adaptive rate limiting to respect Gemini API quotas
+- Inter-batch delays to prevent rate limit hits
 """
 
+import asyncio
 import asyncpg
 import logging
 import os
@@ -19,6 +25,13 @@ from graph_processing.relationship_extraction import RelationshipExtractor
 logger = logging.getLogger(__name__)
 
 
+# Default concurrency limit for parallel API calls
+DEFAULT_MAX_CONCURRENT_CALLS = 2
+
+# Default delay between batches (seconds) to respect rate limits
+DEFAULT_INTER_BATCH_DELAY = 1.0
+
+
 class ExtractionService:
     """Service for extracting entities and relationships from chunks."""
 
@@ -31,7 +44,9 @@ class ExtractionService:
         entity_threshold: float = 0.6,
         relationship_threshold: float = 0.6,
         table_name: str = "document_chunks",
-        batch_size: int = 10
+        batch_size: int = 10,
+        max_concurrent_calls: int = DEFAULT_MAX_CONCURRENT_CALLS,
+        inter_batch_delay: float = DEFAULT_INTER_BATCH_DELAY
     ):
         """
         Initialize extraction service.
@@ -43,6 +58,9 @@ class ExtractionService:
             entity_threshold: Minimum confidence for entity extraction
             relationship_threshold: Minimum confidence for relationship extraction
             table_name: Name of the chunks table (default: document_chunks)
+            batch_size: Number of chunks per batch (default: 10)
+            max_concurrent_calls: Maximum concurrent API calls (default: 2)
+            inter_batch_delay: Delay between batches in seconds (default: 1.0)
         """
         self.pool = pool
         self.entity_extractor = EntityExtractor(pool, gemini_api_key, gemini_model, embedding_model)
@@ -51,6 +69,11 @@ class ExtractionService:
         self.relationship_threshold = relationship_threshold
         self.table_name = table_name
         self.batch_size = max(1, batch_size)
+        self.max_concurrent_calls = max(1, max_concurrent_calls)
+        self.inter_batch_delay = max(0.0, inter_batch_delay)
+
+        # Semaphore for controlling concurrent API calls
+        self._api_semaphore = asyncio.Semaphore(self.max_concurrent_calls)
 
     async def extract_from_chunk(
         self,
@@ -110,6 +133,100 @@ class ExtractionService:
                 'error': str(exc)
             }
 
+    async def _process_batch_with_semaphore(
+        self,
+        batch: List[Dict[str, Any]],
+        batch_index: int,
+        total_batches: int,
+        verbose: bool
+    ) -> Dict[str, Any]:
+        """
+        Process a single batch with semaphore-controlled concurrency.
+
+        Args:
+            batch: List of chunk dicts with 'id' and 'text'
+            batch_index: Index of this batch (0-indexed)
+            total_batches: Total number of batches
+            verbose: Whether to print progress
+
+        Returns:
+            Dict with batch results
+        """
+        async with self._api_semaphore:
+            chunk_payloads = [
+                {'chunk_id': chunk['id'], 'chunk_text': chunk['text']}
+                for chunk in batch
+            ]
+
+            batch_entities = 0
+            batch_relationships = 0
+            batch_successful = 0
+
+            try:
+                # Extract entities for this batch
+                batch_results = await self.entity_extractor.extract_entities_for_batch(
+                    chunk_payloads=chunk_payloads,
+                    confidence_threshold=self.entity_threshold
+                )
+
+                # Prepare relationship extraction payloads
+                relationship_payloads = []
+                for chunk in batch:
+                    chunk_id = chunk['id']
+                    chunk_text = chunk['text']
+                    entities = batch_results.get(chunk_id, [])
+                    batch_entities += len(entities)
+
+                    if len(entities) >= 2:
+                        relationship_payloads.append({
+                            'chunk_id': chunk_id,
+                            'chunk_text': chunk_text,
+                            'entities': entities
+                        })
+
+                # Extract relationships for this batch
+                relationship_results = {}
+                if relationship_payloads:
+                    try:
+                        relationship_results = await self.rel_extractor.extract_relationships_for_batch(
+                            chunk_payloads=relationship_payloads,
+                            confidence_threshold=self.relationship_threshold
+                        )
+                    except Exception as exc:
+                        logger.error(f"Batch {batch_index + 1} relationship extraction failed: {exc}")
+
+                # Count relationships
+                for chunk in batch:
+                    chunk_id = chunk['id']
+                    relationships = relationship_results.get(chunk_id, [])
+                    batch_relationships += len(relationships)
+                    batch_successful += 1
+
+                if verbose:
+                    print(f"  [Batch {batch_index + 1}/{total_batches}] "
+                          f"✓ {batch_entities} entities, {batch_relationships} relationships")
+
+                return {
+                    'successful': batch_successful,
+                    'failed': 0,
+                    'entities': batch_entities,
+                    'relationships': batch_relationships,
+                    'error': None
+                }
+
+            except EntityExtractionError as exc:
+                # Propagate rate limit errors
+                raise
+            except Exception as exc:
+                logger.error(f"Batch {batch_index + 1} processing failed: {exc}")
+                return {
+                    'successful': 0,
+                    'failed': len(batch),
+                    'entities': 0,
+                    'relationships': 0,
+                    'error': str(exc)
+                }
+
     async def extract_from_chunks(
         self,
         chunk_ids: List[UUID],
@@ -117,6 +234,11 @@ class ExtractionService:
     ) -> Dict[str, Any]:
         """
         Extract entities and relationships from multiple chunks.
+
+        Features:
+        - Async non-blocking processing with semaphore-controlled concurrency
+        - Inter-batch delays to respect Gemini API rate limits
+        - Parallel batch processing when max_concurrent_calls > 1
 
         Args:
             chunk_ids: List of chunk UUIDs to process
@@ -147,7 +269,8 @@ class ExtractionService:
         failed = 0
 
         if verbose:
-            print(f"Extracting entities from {total_chunks} chunks (batch size={self.batch_size})...")
+            print(f"Extracting from {total_chunks} chunks "
+                  f"(batch_size={self.batch_size}, concurrency={self.max_concurrent_calls})...")
 
         # Fetch all chunk texts at once
         async with self.pool.acquire() as conn:
@@ -182,62 +305,59 @@ class ExtractionService:
                 'total_relationships': total_relationships
             }
 
-        processed_count = 0
+        # Create batches
+        batches = []
         for start in range(0, total_available, self.batch_size):
-            batch = ordered_chunks[start:start + self.batch_size]
-            chunk_payloads = [
-                {'chunk_id': chunk['id'], 'chunk_text': chunk['text']}
-                for chunk in batch
-            ]
+            batches.append(ordered_chunks[start:start + self.batch_size])
 
-            try:
-                # Batch extract entities
-                batch_results = await self.entity_extractor.extract_entities_for_batch(
-                    chunk_payloads=chunk_payloads,
-                    confidence_threshold=self.entity_threshold
-                )
-            except EntityExtractionError:
-                # Propagate Gemini quota/rate limit errors to caller
-                raise
+        total_batches = len(batches)
 
-            # Prepare relationship extraction payloads
-            relationship_payloads = []
-            for chunk in batch:
-                chunk_id = chunk['id']
-                chunk_text = chunk['text']
-                entities = batch_results.get(chunk_id, [])
+        # Process batches with controlled concurrency
+        # Use gather with inter-batch delays to respect rate limits
+        batch_tasks = []
+        for i, batch in enumerate(batches):
+            # Add inter-batch delay to prevent rate limit hits
+            if i > 0 and self.inter_batch_delay > 0:
+                await asyncio.sleep(self.inter_batch_delay)
 
-                if len(entities) >= 2:
-                    relationship_payloads.append({
-                        'chunk_id': chunk_id,
-                        'chunk_text': chunk_text,
-                        'entities': entities
-                    })
+            task = self._process_batch_with_semaphore(
+                batch=batch,
+                batch_index=i,
+                total_batches=total_batches,
+                verbose=verbose
+            )
+            batch_tasks.append(task)
 
-            # Batch extract relationships for all chunks at once
-            try:
-                relationship_results = await self.rel_extractor.extract_relationships_for_batch(
-                    chunk_payloads=relationship_payloads,
-                    confidence_threshold=self.relationship_threshold
-                )
-            except Exception as exc:
-                logger.error(f"Batch relationship extraction failed: {exc}")
-                relationship_results = {}
+            # If we've queued up max_concurrent_calls tasks, await them
+            if len(batch_tasks) >= self.max_concurrent_calls:
+                results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, Exception):
+                        if isinstance(result, EntityExtractionError):
+                            raise result
+                        logger.error(f"Batch failed with exception: {result}")
+                        failed += self.batch_size
+                    else:
+                        successful += result['successful']
+                        failed += result['failed']
+                        total_entities += result['entities']
+                        total_relationships += result['relationships']
+                batch_tasks = []
 
-            # Count results and report progress
-            for chunk in batch:
-                processed_count += 1
-                chunk_id = chunk['id']
-                entities = batch_results.get(chunk_id, [])
-                relationships = relationship_results.get(chunk_id, [])
-
-                total_entities += len(entities)
-                total_relationships += len(relationships)
-                successful += 1
-
-                if verbose:
-                    print(f"  [{processed_count}/{total_available}] "
-                          f"✓ {len(entities)} entities, {len(relationships)} relationships")
+        # Process remaining tasks
+        if batch_tasks:
+            results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    if isinstance(result, EntityExtractionError):
+                        raise result
+                    logger.error(f"Batch failed with exception: {result}")
+                    failed += self.batch_size
+                else:
+                    successful += result['successful']
+                    failed += result['failed']
+                    total_entities += result['entities']
+                    total_relationships += result['relationships']
 
         return {
             'total_chunks': total_chunks,
@@ -286,7 +406,9 @@ async def create_extraction_service(
     pool: asyncpg.Pool,
     entity_threshold: Optional[float] = None,
     relationship_threshold: Optional[float] = None,
-    table_name: str = "document_chunks"
+    table_name: str = "document_chunks",
+    max_concurrent_calls: Optional[int] = None,
+    inter_batch_delay: Optional[float] = None
 ) -> ExtractionService:
     """
     Factory function to create ExtractionService with default config.
@@ -296,6 +418,8 @@ async def create_extraction_service(
         entity_threshold: Override default entity confidence threshold
         relationship_threshold: Override default relationship confidence threshold
         table_name: Name of the chunks table (default: document_chunks)
+        max_concurrent_calls: Maximum concurrent API calls (default: 2)
+        inter_batch_delay: Delay between batches in seconds (default: 1.0)
 
     Returns:
         Configured ExtractionService instance
@@ -311,6 +435,10 @@ async def create_extraction_service(
     relationship_threshold = relationship_threshold or config.relationship_confidence_threshold
     batch_size = config.batch_size
 
+    # Get concurrency settings from config
+    max_concurrent = max_concurrent_calls or config.max_concurrent_api_calls
+    batch_delay = inter_batch_delay if inter_batch_delay is not None else config.inter_batch_delay
+
     embedding_model_name = config.entity_embedding_model
     embedding_model = SentenceTransformer(embedding_model_name)
 
@@ -322,5 +450,7 @@ async def create_extraction_service(
         entity_threshold=entity_threshold,
         relationship_threshold=relationship_threshold,
         table_name=table_name,
-        batch_size=batch_size
+        batch_size=batch_size,
+        max_concurrent_calls=max_concurrent,
+        inter_batch_delay=batch_delay
     )

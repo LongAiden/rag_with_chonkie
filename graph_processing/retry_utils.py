@@ -1,10 +1,16 @@
 """
 Retry utilities for handling Gemini API rate limits and errors.
+
+Features:
+- Exponential backoff with jitter
+- Special handling for rate limit errors (longer pause)
+- Adaptive delay based on error type
 """
 
 import time
+import random
 import logging
-from typing import Callable, TypeVar, Any
+from typing import Callable, TypeVar
 from functools import wraps
 
 logger = logging.getLogger(__name__)
@@ -27,6 +33,8 @@ def is_rate_limit_error(exception: Exception) -> bool:
         "429",
         "too many requests",
         "requests per",
+        "rate_limit",
+        "ratelimit",
     ]
     return any(indicator in error_msg for indicator in rate_limit_indicators)
 
@@ -87,10 +95,11 @@ def calculate_delay(
     max_delay: float,
     exponential_base: float,
     is_rate_limit: bool = False,
-    rate_limit_pause: float = 65.0
+    rate_limit_pause: float = 65.0,
+    add_jitter: bool = True
 ) -> float:
     """
-    Calculate delay before next retry using exponential backoff.
+    Calculate delay before next retry using exponential backoff with jitter.
 
     Args:
         retry_count: Current retry attempt number (0-indexed)
@@ -99,19 +108,28 @@ def calculate_delay(
         exponential_base: Base for exponential backoff
         is_rate_limit: True if error was a rate limit
         rate_limit_pause: Special pause duration for rate limits
+        add_jitter: Add random jitter to prevent thundering herd (default: True)
 
     Returns:
         Delay in seconds before next retry
     """
     if is_rate_limit:
-        # For rate limits, use special pause duration
-        return rate_limit_pause
+        # For rate limits, use special pause duration with small jitter
+        jitter = random.uniform(0, 5) if add_jitter else 0
+        return rate_limit_pause + jitter
 
     # Exponential backoff: initial_delay * (base ^ retry_count)
     delay = initial_delay * (exponential_base ** retry_count)
 
     # Cap at max_delay
-    return min(delay, max_delay)
+    delay = min(delay, max_delay)
+
+    # Add jitter (up to 25% of delay) to prevent thundering herd
+    if add_jitter:
+        jitter = random.uniform(0, delay * 0.25)
+        delay += jitter
+
+    return delay
 
 
 def retry_with_backoff(

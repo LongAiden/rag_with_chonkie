@@ -148,14 +148,26 @@ class GraphConfig(BaseSettings):
     # Batch Processing Configuration
     # ============================================
     batch_size: int = Field(
-        default=10,
+        default=5,
         ge=1,
-        le=200,
-        description="Number of chunks to process in batch extraction"
+        le=50,
+        description="Number of chunks to process per batch (smaller = safer for rate limits)"
     )
     enable_parallel_extraction: bool = Field(
         default=True,
         description="Enable parallel processing for batch extraction"
+    )
+    max_concurrent_api_calls: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Maximum concurrent Gemini API calls (higher = faster but more rate limit risk)"
+    )
+    inter_batch_delay: float = Field(
+        default=1.5,
+        ge=0.0,
+        le=30.0,
+        description="Delay between batches in seconds (helps avoid rate limits)"
     )
 
     # ============================================
@@ -307,9 +319,11 @@ GEMINI_RETRY_MAX_DELAY=60.0           # Max delay between retries (seconds)
 GEMINI_RETRY_EXPONENTIAL_BASE=2.0     # Exponential backoff multiplier
 GEMINI_RATE_LIMIT_PAUSE=65.0          # Pause when rate limit hit (seconds)
 
-# Performance
-BATCH_SIZE=10
+# Performance & Rate Limiting
+BATCH_SIZE=5                          # Chunks per batch (smaller = safer)
 ENABLE_PARALLEL_EXTRACTION=true
+MAX_CONCURRENT_API_CALLS=2            # Concurrent Gemini calls (1-5)
+INTER_BATCH_DELAY=1.5                 # Seconds between batches
 ENABLE_ENTITY_CACHING=true
 CACHE_TTL_SECONDS=3600
 

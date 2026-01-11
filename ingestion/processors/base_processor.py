@@ -129,12 +129,14 @@ class DocumentProcessor(ABC):
         # Step 3: Chunk the text using the factory pattern
         # Supports: token (fastest), recursive (default, balanced), semantic (best quality)
         # Set via chunker_type parameter or CHUNKER_TYPE environment variable
+        # Pass text_length for adaptive chunker selection (large docs -> RecursiveChunker)
         chunker = get_chunker(
             chunker_type=chunker_type,
             chunk_size=chunk_size,
             chunk_overlap=50,
             similarity_threshold=similarity_threshold,
-            embedding_model=embedding_model
+            embedding_model=embedding_model,
+            text_length=len(text)  # Adaptive: large docs will use RecursiveChunker
         )
         chunks = chunker.chunk(text)
 
