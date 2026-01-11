@@ -10,8 +10,9 @@ from uuid import UUID
 import asyncpg
 from google import generativeai as genai
 
+import asyncio
 from .entity_types import EntityType, ENTITY_TYPE_DESCRIPTIONS
-from .retry_utils import retry_with_backoff
+from .retry_utils import retry_async_with_backoff
 from config.graph_config import get_graph_config
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class EntityExtractor:
         self.retry_exponential_base = config.gemini_retry_exponential_base
         self.rate_limit_pause = config.gemini_rate_limit_pause
 
-    def _call_gemini_with_retry(self, prompt: str) -> Any:
+    async def _call_gemini_with_retry(self, prompt: str) -> Any:
         """
         Call Gemini API with retry logic and exponential backoff.
 
@@ -60,17 +61,17 @@ class EntityExtractor:
         Raises:
             EntityExtractionError: If all retries are exhausted
         """
-        @retry_with_backoff(
+        @retry_async_with_backoff(
             max_retries=self.max_retries,
             initial_delay=self.retry_initial_delay,
             max_delay=self.retry_max_delay,
             exponential_base=self.retry_exponential_base,
             rate_limit_pause=self.rate_limit_pause
         )
-        def _call():
-            return self.model.generate_content(prompt)
+        async def _call():
+            return await self.model.generate_content_async(prompt)
 
-        return _call()
+        return await _call()
 
     async def extract_entities_from_chunk(
         self,
@@ -93,7 +94,7 @@ class EntityExtractor:
         prompt = self._create_extraction_prompt(chunk_text)
 
         try:
-            response = self._call_gemini_with_retry(prompt)
+            response = await self._call_gemini_with_retry(prompt)
             entities_text = response.text
             entities = self._parse_entities(entities_text, confidence_threshold)
             stored_entities = await self._store_entities(chunk_id, entities)
@@ -127,7 +128,7 @@ class EntityExtractor:
         prompt = self._create_batch_prompt(chunk_payloads)
 
         try:
-            response = self._call_gemini_with_retry(prompt)
+            response = await self._call_gemini_with_retry(prompt)
             batch_text = response.text
         except Exception as exc:
             message = self._format_model_error(exc)
@@ -337,8 +338,9 @@ JSON RESPONSE:
     ) -> UUID:
         """Store or update entity in database."""
         async with self.db_pool.acquire() as conn:
-            # Generate embedding for entity name
-            embedding = self.embedding_model.encode(entity_name).tolist()
+            # Generate embedding for entity name (offload to thread as it is CPU bound)
+            embedding = await asyncio.to_thread(self.embedding_model.encode, entity_name)
+            embedding = embedding.tolist()
             # Convert embedding to pgvector format string
             embedding_str = '[' + ','.join(map(str, embedding)) + ']'
 
@@ -439,8 +441,9 @@ JSON RESPONSE:
     ) -> List[Dict]:
         """Search entities by name or embedding similarity."""
         async with self.db_pool.acquire() as conn:
-            # Generate query embedding
-            query_embedding = self.embedding_model.encode(query).tolist()
+            # Generate query embedding (offload to thread)
+            embedding_array = await asyncio.to_thread(self.embedding_model.encode, query)
+            query_embedding = embedding_array.tolist()
 
             # Search by embedding similarity
             if entity_type:

@@ -11,7 +11,7 @@ import asyncpg
 from google import generativeai as genai
 
 from .entity_types import RelationshipType, RELATIONSHIP_TYPE_DESCRIPTIONS
-from .retry_utils import retry_with_backoff
+from .retry_utils import retry_async_with_backoff
 from .json_utils import JSONParser
 from config.graph_config import get_graph_config
 
@@ -36,7 +36,7 @@ class RelationshipExtractor:
         self.retry_exponential_base = config.gemini_retry_exponential_base
         self.rate_limit_pause = config.gemini_rate_limit_pause
 
-    def _call_gemini_with_retry(self, prompt: str) -> Any:
+    async def _call_gemini_with_retry(self, prompt: str) -> Any:
         """
         Call Gemini API with retry logic and exponential backoff.
 
@@ -46,17 +46,17 @@ class RelationshipExtractor:
         Returns:
             Gemini response object
         """
-        @retry_with_backoff(
+        @retry_async_with_backoff(
             max_retries=self.max_retries,
             initial_delay=self.retry_initial_delay,
             max_delay=self.retry_max_delay,
             exponential_base=self.retry_exponential_base,
             rate_limit_pause=self.rate_limit_pause
         )
-        def _call():
-            return self.model.generate_content(prompt)
+        async def _call():
+            return await self.model.generate_content_async(prompt)
 
-        return _call()
+        return await _call()
 
     async def extract_relationships_from_chunk(
         self,
@@ -86,7 +86,7 @@ class RelationshipExtractor:
 
         try:
             # Call Gemini to extract relationships
-            response = self._call_gemini_with_retry(prompt)
+            response = await self._call_gemini_with_retry(prompt)
             relationships_text = response.text
 
             # Parse the response
@@ -158,7 +158,7 @@ class RelationshipExtractor:
             # Call Gemini once for all chunks
             with logfire.span("batch_relationship_extraction",
                             num_chunks=len(valid_payloads)):
-                response = self._call_gemini_with_retry(prompt)
+                response = await self._call_gemini_with_retry(prompt)
                 batch_text = response.text
 
                 logfire.info("Gemini response received",

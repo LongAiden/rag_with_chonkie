@@ -53,6 +53,11 @@ def get_chunker(
     """
     from chonkie import TokenChunker, RecursiveChunker, SemanticChunker
 
+    # Global cache for heavy chunkers
+    global _CHUNKER_CACHE
+    if not '_CHUNKER_CACHE' in globals():
+        _CHUNKER_CACHE = {}
+
     # Determine chunker type
     if chunker_type is None:
         chunker_type = os.getenv("CHUNKER_TYPE", "recursive").lower()
@@ -61,25 +66,34 @@ def get_chunker(
 
     # Create appropriate chunker
     if chunker_type == ChunkerType.TOKEN.value:
-        print(f"Using TokenChunker (fastest, simple token-based)")
+        # Token chunker is lightweight, no need to cache aggressively but we can consistency
         return TokenChunker(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap
         )
 
     elif chunker_type == ChunkerType.RECURSIVE.value:
-        print(f"Using RecursiveChunker (balanced, respects boundaries)")
+        # Recursive chunker is also lightweight
         return RecursiveChunker(
             chunk_size=chunk_size
         )
 
     elif chunker_type == ChunkerType.SEMANTIC.value:
-        print(f"Using SemanticChunker (highest quality, slowest)")
-        return SemanticChunker(
+        # Semantic chunker is HEAVY (loads models). Must cache.
+        embedding_model_name = embedding_model or "sentence-transformers/all-MiniLM-L6-v2"
+        cache_key = f"semantic_{chunk_size}_{similarity_threshold}_{embedding_model_name}"
+        
+        if cache_key in _CHUNKER_CACHE:
+            return _CHUNKER_CACHE[cache_key]
+            
+        print(f"Initializing SemanticChunker (loading model: {embedding_model_name})...")
+        chunker = SemanticChunker(
             chunk_size=chunk_size,
             threshold=similarity_threshold,
-            embedding_model=embedding_model or "sentence-transformers/all-MiniLM-L6-v2"
+            embedding_model=embedding_model_name
         )
+        _CHUNKER_CACHE[cache_key] = chunker
+        return chunker
 
     else:
         raise ValueError(
