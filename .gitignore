@@ -36,3 +36,7 @@ htmlcov/
 .tox/
 *.cover
 .hypothesis/
+
+
+# Cursor rules
+.cursorrules

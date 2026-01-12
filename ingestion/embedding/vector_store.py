@@ -8,14 +8,11 @@ from pathlib import Path
 # Disable tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from chonkie import SemanticChunker
 from sentence_transformers import SentenceTransformer
-
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from ingestion.chunking.semantic_chunker import process_document_with_processor
 from ingestion.text_cleaning import TextCleanerFactory
-
+from ingestion.processors.processor_factory import get_processor_for_file
 
 @dataclass
 class Chunk:
@@ -500,17 +497,16 @@ class ChunkEmbeddingPipeline:
 
         print(f"Processing document: {filename} (ID: {document_id})")
 
-        # Use the new Abstract Method pattern processor for chunking with page numbers
-        # Automatically selects the right processor (PDF, DOCX, TXT) based on file extension
-        # Note: Don't pass embedding_model to avoid Chonkie validation errors
-        # Chonkie will use its default embedding model for chunking similarity calculation
-        # We generate our own embeddings separately for vector storage
-        chunks = process_document_with_processor(
+        # Step 1: Get the appropriate processor (Factory Pattern)
+        processor = get_processor_for_file(str(file_path))
+
+        # Step 2: Process document with selected chunking strategy
+        chunks = processor.process_document(
             file_path=str(file_path),
             chunk_size=chunk_size,
             similarity_threshold=similarity_threshold,
-            embedding_model=None,  # Let Chonkie use default for chunking
-            chunker_type=chunker_type  # Pass through chunker selection
+            embedding_model=None, # Default model
+            chunker_type=chunker_type  # Strategy: "token", "recursive", or "semantic"
         )
 
         print(f"Created {len(chunks)} chunks using processor pattern (Abstract Method + Factory)")
