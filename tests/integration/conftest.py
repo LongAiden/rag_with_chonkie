@@ -89,3 +89,11 @@ async def cleanup_test_table(db_connection, test_table_name):
         await db_connection.execute(f"DROP TABLE IF EXISTS {test_table_name};")
     except Exception as e:
         print(f"Warning: Could not drop test table {test_table_name}: {e}")
+
+
+@pytest.fixture(scope="session")
+def gemini_llm_provider(gemini_api_key, gemini_model):
+    """Create a GeminiLLMProvider for integration tests."""
+    from graph_processing.gemini_provider import GeminiLLMProvider
+    return GeminiLLMProvider(api_key=gemini_api_key, model_name=gemini_model)
+
