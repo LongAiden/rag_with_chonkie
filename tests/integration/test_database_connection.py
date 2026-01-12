@@ -1,5 +1,5 @@
 """
-Tests for PostgreSQL + pgvector database connection.
+Integration tests for PostgreSQL + pgvector database connection.
 
 These tests verify:
 1. Basic database connectivity
