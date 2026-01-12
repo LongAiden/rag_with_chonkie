@@ -112,7 +112,7 @@ class DocumentProcessor(ABC):
         Raises:
             ValueError: If file is invalid or processing fails
         """
-        from ingestion.chunking.semantic_chunker import get_page_number_for_position
+        from ingestion.processors.page_utils import get_page_number_for_position
         from ingestion.chunking.chunker_factory import get_chunker
 
         # Step 1: Validate (uses child's validation)

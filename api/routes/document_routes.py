@@ -470,7 +470,7 @@ async def health_check(get_pipeline=None):
 @router.get("/supported-types")
 async def get_supported_types(config=None):
     """Get information about supported file types and validation config (using processor registry)."""
-    from ingestion.chunking.semantic_chunker import get_supported_file_types, list_available_processors
+    from ingestion.processors.page_utils import get_page_number_for_position, get_supported_file_types, list_available_processors
 
     # Get supported types from processor registry (dynamic based on registered processors)
     supported_extensions = get_supported_file_types()
