@@ -8,70 +8,58 @@ import re
 from typing import List, Dict, Any, Sequence
 from uuid import UUID
 import asyncpg
-from google import generativeai as genai
 
 import asyncio
 from .entity_types import EntityType, ENTITY_TYPE_DESCRIPTIONS
-from .retry_utils import retry_async_with_backoff
-from config.graph_config import get_graph_config
+from .llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
 
 
 class EntityExtractionError(Exception):
-    """Raised when Gemini entity extraction fails."""
+    """Raised when LLM entity extraction fails."""
 
 
 class EntityExtractor:
-    """Extract entities from text chunks using Gemini."""
+    """Extract entities from text chunks using an LLM provider."""
 
     def __init__(
         self,
         db_pool: asyncpg.Pool,
-        gemini_api_key: str,
-        gemini_model: str,
+        llm_provider: LLMProvider,
         embedding_model,
     ):
+        """
+        Initialize EntityExtractor with an LLM provider.
+        
+        Args:
+            db_pool: Database connection pool
+            llm_provider: LLM provider instance (e.g., GeminiLLMProvider)
+            embedding_model: Embedding model for entity embeddings
+        """
         self.db_pool = db_pool
-        self.gemini_api_key = gemini_api_key
+        self.llm_provider = llm_provider
         self.embedding_model = embedding_model
-        genai.configure(api_key=gemini_api_key)
-        self.gemini_model = gemini_model or "gemini-2.5-flash"
-        self.model = genai.GenerativeModel(self.gemini_model)
         self.valid_entity_types = {et.value for et in EntityType}
 
-        # Load retry configuration
-        config = get_graph_config()
-        self.max_retries = config.gemini_max_retries
-        self.retry_initial_delay = config.gemini_retry_initial_delay
-        self.retry_max_delay = config.gemini_retry_max_delay
-        self.retry_exponential_base = config.gemini_retry_exponential_base
-        self.rate_limit_pause = config.gemini_rate_limit_pause
-
-    async def _call_gemini_with_retry(self, prompt: str) -> Any:
+    async def _call_llm_with_retry(self, prompt: str) -> Any:
         """
-        Call Gemini API with retry logic and exponential backoff.
+        Call LLM API with retry logic (delegated to provider).
 
         Args:
-            prompt: The prompt to send to Gemini
+            prompt: The prompt to send to the LLM
 
         Returns:
-            Gemini response object
+            LLM response object
 
         Raises:
-            EntityExtractionError: If all retries are exhausted
+            EntityExtractionError: If the LLM call fails
         """
-        @retry_async_with_backoff(
-            max_retries=self.max_retries,
-            initial_delay=self.retry_initial_delay,
-            max_delay=self.retry_max_delay,
-            exponential_base=self.retry_exponential_base,
-            rate_limit_pause=self.rate_limit_pause
-        )
-        async def _call():
-            return await self.model.generate_content_async(prompt)
+        try:
+            return await self.llm_provider.generate_content(prompt)
+        except Exception as e:
+            raise EntityExtractionError(f"LLM generation failed: {str(e)}") from e
 
-        return await _call()
 
     async def extract_entities_from_chunk(
         self,
@@ -80,7 +68,7 @@ class EntityExtractor:
         confidence_threshold: float = 0.6
     ) -> List[Dict[str, Any]]:
         """
-        Extract entities from a text chunk using Gemini.
+        Extract entities from a text chunk using the LLM provider.
 
         Args:
             chunk_id: UUID of the source chunk
@@ -94,8 +82,8 @@ class EntityExtractor:
         prompt = self._create_extraction_prompt(chunk_text)
 
         try:
-            response = await self._call_gemini_with_retry(prompt)
-            entities_text = response.text
+            response = await self._call_llm_with_retry(prompt)
+            entities_text = self.llm_provider.extract_text_from_response(response)
             entities = self._parse_entities(entities_text, confidence_threshold)
             stored_entities = await self._store_entities(chunk_id, entities)
 
@@ -113,7 +101,7 @@ class EntityExtractor:
         confidence_threshold: float = 0.6
     ) -> Dict[UUID, List[Dict[str, Any]]]:
         """
-        Extract entities for multiple chunks in a single Gemini request.
+        Extract entities for multiple chunks in a single LLM request.
 
         Args:
             chunk_payloads: Sequence of {'chunk_id': UUID, 'chunk_text': str}
@@ -128,8 +116,8 @@ class EntityExtractor:
         prompt = self._create_batch_prompt(chunk_payloads)
 
         try:
-            response = await self._call_gemini_with_retry(prompt)
-            batch_text = response.text
+            response = await self._call_llm_with_retry(prompt)
+            batch_text = self.llm_provider.extract_text_from_response(response)
         except Exception as exc:
             message = self._format_model_error(exc)
             logger.error(f"Batch entity extraction failed: {message}")

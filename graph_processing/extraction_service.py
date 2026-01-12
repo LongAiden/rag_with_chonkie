@@ -6,7 +6,7 @@ data when documents are uploaded and chunked.
 
 Features:
 - Async non-blocking LLM calls with semaphore-based concurrency control
-- Adaptive rate limiting to respect Gemini API quotas
+- Adaptive rate limiting to respect LLM API quotas
 - Inter-batch delays to prevent rate limit hits
 """
 
@@ -21,6 +21,7 @@ from sentence_transformers import SentenceTransformer
 from config.graph_config import get_graph_config
 from graph_processing.entity_extraction import EntityExtractor, EntityExtractionError
 from graph_processing.relationship_extraction import RelationshipExtractor
+from graph_processing.gemini_provider import GeminiLLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class ExtractionService:
         Args:
             pool: Database connection pool
             gemini_api_key: Google Gemini API key for LLM
+            gemini_model: Gemini model name
             embedding_model: SentenceTransformer model for embeddings
             entity_threshold: Minimum confidence for entity extraction
             relationship_threshold: Minimum confidence for relationship extraction
@@ -63,7 +65,12 @@ class ExtractionService:
             inter_batch_delay: Delay between batches in seconds (default: 1.0)
         """
         self.pool = pool
-        self.entity_extractor = EntityExtractor(pool, gemini_api_key, gemini_model, embedding_model)
+        
+        # Create LLM provider
+        llm_provider = GeminiLLMProvider(api_key=gemini_api_key, model_name=gemini_model)
+        
+        # Initialize extractors with the provider
+        self.entity_extractor = EntityExtractor(pool, llm_provider, embedding_model)
         self.rel_extractor = RelationshipExtractor(pool, gemini_api_key, gemini_model)
         self.entity_threshold = entity_threshold
         self.relationship_threshold = relationship_threshold

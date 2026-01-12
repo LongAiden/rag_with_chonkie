@@ -6,7 +6,8 @@ Handles environment setup, database configuration, and service initialization.
 import os
 from pathlib import Path
 from typing import Optional
-from dotenv import load_dotenv, dotenv_values
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 import logfire
 import google.generativeai as genai
@@ -16,9 +17,6 @@ from pydantic_ai.providers.google import GoogleProvider
 
 from ingestion.validation.file_validator import FileValidator, FileValidationConfig
 from models.models import SimpleRAGResponse
-
-# Disable tokenizers parallelism warning
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Constants
 DEFAULT_TABLE_NAME = "document_chunks"
@@ -31,29 +29,70 @@ ALLOWED_CONTENT_TYPES = [
 ]
 
 
+class DatabaseConfig(BaseSettings):
+    """Database configuration using pydantic-settings."""
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='ignore'
+    )
+
+    # Database settings with fallback aliases
+    host: str = Field(default='localhost', validation_alias='POSTGRES_HOST')
+    port: str = Field(default='5432', validation_alias='POSTGRES_PORT')
+    dbname: str = Field(default='rag_db', validation_alias='POSTGRES_DB')
+    user: str = Field(default='admin', validation_alias='POSTGRES_USER')
+    password: str = Field(default='admin', validation_alias='POSTGRES_PASSWORD')
+
+    def to_dict(self):
+        """Convert to dictionary format for psycopg2/asyncpg."""
+        return {
+            'host': self.host,
+            'port': self.port,
+            'dbname': self.dbname,
+            'user': self.user,
+            'password': self.password
+        }
+
+
+class AppSettings(BaseSettings):
+    """Application settings using pydantic-settings."""
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='ignore'
+    )
+
+    # Logfire
+    logfire_write_token: Optional[str] = Field(default=None, validation_alias='LOGFIRE_WRITE_TOKEN')
+
+    # Gemini/Google AI
+    google_api_key: Optional[str] = Field(default=None, validation_alias='GOOGLE_API_KEY')
+    gemini_model: str = Field(default='gemini-1.5-flash', validation_alias='GEMINI_MODEL')
+
+    # Embedding
+    embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL)
+
+    # Table
+    table_name: str = Field(default=DEFAULT_TABLE_NAME)
+
+
 class AppConfig:
     """Global application configuration and service initialization."""
 
-    def __init__(self):
-        # Initialize logfire with token from environment
-        logfire_token = os.getenv('LOGFIRE_WRITE_TOKEN')
-        if logfire_token:
-            logfire.configure(token=logfire_token)
-            print("✓ Logfire configured successfully")
-        else:
-            print("⚠️ LOGFIRE_WRITE_TOKEN not found, using default configuration")
-            logfire.configure()
+    def __init__(self, settings: Optional[AppSettings] = None, db_config: Optional[DatabaseConfig] = None):
+        # Disable tokenizers parallelism warning
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        # Database configuration
-        db_host = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or 'localhost'
-        db_port = os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or '5432'
-        self.db_params = {
-            'host': db_host,
-            'port': db_port,
-            'dbname': os.getenv('POSTGRES_DB', 'rag_db'),
-            'user': os.getenv('POSTGRES_USER', 'admin'),
-            'password': os.getenv('POSTGRES_PASSWORD', 'admin')
-        }
+        # Load settings
+        self.settings = settings or AppSettings()
+        self.db_config = db_config or DatabaseConfig()
+
+        # Initialize logfire
+        self._configure_logfire()
+
+        # Database configuration (backward compatible dict format)
+        self.db_params = self.db_config.to_dict()
 
         # Service initialization (lazy loading for performance)
         self.file_validator = FileValidator(FileValidationConfig())
@@ -62,16 +101,22 @@ class AppConfig:
         self.reranker = None  # Lazy initialization
         self.graph_pool = None  # Lazy initialization
 
+    def _configure_logfire(self):
+        """Configure logfire with token from settings."""
+        if self.settings.logfire_write_token:
+            logfire.configure(token=self.settings.logfire_write_token)
+            print("✓ Logfire configured successfully")
+        else:
+            print("⚠️ LOGFIRE_WRITE_TOKEN not found, using default configuration")
+            logfire.configure()
+
     def _configure_pydantic_ai(self) -> Optional[Agent]:
         """Configure Pydantic AI Agent with Google Gemini."""
-        gemini_key = os.getenv('GOOGLE_API_KEY')
-        gemini_model = os.getenv('GEMINI_MODEL')
-
-        if gemini_key:
+        if self.settings.google_api_key:
             try:
                 # Configure Pydantic AI Agent with GoogleProvider
-                provider = GoogleProvider(api_key=gemini_key)
-                model = GoogleModel(gemini_model, provider=provider)
+                provider = GoogleProvider(api_key=self.settings.google_api_key)
+                model = GoogleModel(self.settings.gemini_model, provider=provider)
 
                 # Create agent with system prompt and output type
                 agent = Agent(
@@ -108,37 +153,14 @@ class AppConfig:
                 print(f"❌ Pydantic AI configuration failed: {e}")
                 # Fallback to direct genai for backward compatibility
                 try:
-                    genai.configure(api_key=gemini_key)
+                    genai.configure(api_key=self.settings.google_api_key)
                     print("✓ Fallback to direct Gemini API")
                 except Exception as fallback_error:
                     print(f"❌ Gemini fallback also failed: {fallback_error}")
         return None
 
 
-def load_environment():
-    """Load environment variables from .env file."""
-    # Load from project root .env file
-    project_root = Path(__file__).parent.parent
-    env_path = project_root / '.env'
-    load_dotenv(env_path)
-
-    # Docker compose injects empty strings when variables aren't defined, so reapply
-    # values from the env file for any unset/blank environment variables.
-    if env_path.exists():
-        for key, value in dotenv_values(str(env_path)).items():
-            if (os.getenv(key) in (None, "")) and value is not None:
-                os.environ[key] = value
-
-
 def get_gemini_model() -> str:
     """Get the configured Gemini model name."""
-    return os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
-
-
-# Initialize environment on module import
-load_environment()
-
-# Add project root to path for models
-project_root = Path(__file__).parent.parent
-import sys
-sys.path.insert(0, str(project_root))
+    settings = AppSettings()
+    return settings.gemini_model
