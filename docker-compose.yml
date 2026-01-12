@@ -216,8 +216,8 @@ services:
       # Test environment
       PYTHONPATH: /app
     volumes:
-      # Mount test directory for easier test development
-      - ./test:/app/test
+      # Mount tests directory for easier test development
+      - ./tests:/app/tests
       # Mount htmlcov for coverage reports
       - ./htmlcov:/app/htmlcov
     depends_on:

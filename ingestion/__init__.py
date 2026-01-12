@@ -11,8 +11,7 @@ from ingestion.processors import (
     get_processor_for_file,
     get_registry
 )
-from ingestion.chunking import (
-    process_document_with_processor,
+from ingestion.processors.page_utils import (
     get_supported_file_types,
     list_available_processors
 )
@@ -25,8 +24,6 @@ __all__ = [
     'TXTProcessor',
     'get_processor_for_file',
     'get_registry',
-    # Chunking
-    'process_document_with_processor',
     'get_supported_file_types',
     'list_available_processors',
 ]
