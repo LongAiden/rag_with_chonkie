@@ -90,18 +90,19 @@ def get_chunker(
         cache_key = f"token_{chunk_size}_{chunk_overlap}"
         if cache_key not in _CHUNKER_CACHE:
             _CHUNKER_CACHE[cache_key] = TokenChunker(
+                tokenizer="character",
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap
             )
         return _CHUNKER_CACHE[cache_key]
 
     elif chunker_type == ChunkerType.RECURSIVE.value:
-        # RecursiveChunker with overlap for better context preservation
-        cache_key = f"recursive_{chunk_size}_{chunk_overlap}"
+        # Uses hierarchical text splitting with delimiters
+        cache_key = f"recursive_{chunk_size}"
         if cache_key not in _CHUNKER_CACHE:
             _CHUNKER_CACHE[cache_key] = RecursiveChunker(
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap
+                tokenizer_or_token_counter="character",
+                chunk_size=chunk_size
             )
         return _CHUNKER_CACHE[cache_key]
 
