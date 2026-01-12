@@ -8,6 +8,9 @@ services:
     build:
       context: .
       dockerfile: deployment/Dockerfile.postgres
+      cache_from:
+        - rag_postgres:latest
+    image: rag_postgres:latest
     container_name: rag_postgres
     deploy:
       resources:
@@ -56,7 +59,9 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: deployment/Dockerfile
+      cache_from:
+        - rag_with_llama:latest
     image: rag_with_llama:latest
     container_name: rag_app
     deploy:
@@ -127,12 +132,9 @@ services:
     restart: unless-stopped
 
   # ============================================
-  # Celery Worker (reuses app image)
+  # Celery Worker (reuses app image - no rebuild needed)
   # ============================================
   celery_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: rag_with_llama:latest
     container_name: rag_celery_worker
     command: celery -A worker.celery_app worker --loglevel=info
@@ -192,7 +194,7 @@ services:
   test:
     build:
       context: .
-      dockerfile: Dockerfile.test
+      dockerfile: deployment/Dockerfile.test
     image: rag_with_llama:test
     container_name: rag_test
     environment:
