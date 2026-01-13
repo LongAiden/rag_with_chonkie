@@ -71,7 +71,7 @@ class TestAppSettings:
             from api.config import AppSettings
             settings = AppSettings()
 
-            assert settings.gemini_model == 'gemini-1.5-flash'
+            assert settings.gemini_model == 'gemini-2.5-flash'
 
     def test_loads_google_api_key(self):
         """Test that AppSettings loads Google API key from environment."""
@@ -99,7 +99,7 @@ class TestGetGeminiModel:
             from api.config import get_gemini_model
             result = get_gemini_model()
 
-            assert result == 'gemini-1.5-flash'
+            assert result == 'gemini-2.5-flash'
 
     def test_returns_configured_value(self):
         """Test that get_gemini_model returns configured value."""

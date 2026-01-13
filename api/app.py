@@ -26,7 +26,7 @@ from models.models import QueryRequest, UploadResponse, RAGResponse
 app = FastAPI(title="pgvector RAG API", version="1.0.0")
 
 # Register graph routes
-from api.graph_routes import router as graph_router
+from api.routes.graph_routes import router as graph_router
 app.include_router(graph_router)
 
 # Global configuration

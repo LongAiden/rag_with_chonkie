@@ -41,7 +41,7 @@ class FileValidationResult(BaseModel):
 
 class FileValidationConfig(BaseModel):
     """Configuration for file validation."""
-    max_file_size_mb: int = Field(
+    max_file_size_mb: float = Field(
         default=50, description="Maximum file size in MB")
     allowed_extensions: List[str] = Field(default=[".pdf", ".txt"])
 

@@ -15,6 +15,8 @@ Adaptive Selection:
 from enum import Enum
 from typing import List, Optional
 import os
+import logfire
+
 
 
 class ChunkerType(Enum):
@@ -76,6 +78,12 @@ def get_chunker(
         chunker_type = os.getenv("CHUNKER_TYPE", "recursive").lower()
     else:
         chunker_type = chunker_type.lower()
+
+    # Validate parameters
+    if chunk_size < chunk_overlap:
+        error_msg = f"Chunk size ({chunk_size}) must be greater than chunk overlap ({chunk_overlap})"
+        logfire.error(error_msg, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        raise ValueError(error_msg)
 
     # Adaptive selection: Force RecursiveChunker for large documents
     # This prevents SemanticChunker from being too slow on large PDFs

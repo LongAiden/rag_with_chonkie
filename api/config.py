@@ -68,7 +68,7 @@ class AppSettings(BaseSettings):
 
     # Gemini/Google AI
     google_api_key: Optional[str] = Field(default=None, validation_alias='GOOGLE_API_KEY')
-    gemini_model: str = Field(default='gemini-1.5-flash', validation_alias='GEMINI_MODEL')
+    gemini_model: str = Field(default='gemini-2.5-flash', validation_alias='GEMINI_MODEL')
 
     # Embedding
     embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL)

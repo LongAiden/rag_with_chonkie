@@ -109,20 +109,17 @@ class TestFileSizeValidation:
 
     def test_file_exceeding_size_limit(self, temp_dir):
         """Test that files exceeding size limit fail validation."""
-        # Create a small config with 1 byte limit to simulate exceeding
-        small_config = FileValidationConfig(max_file_size_mb=0)
-        
+        # Create a 1KB file
         large_file = temp_dir / "large.txt"
-        large_file.write_text("x" * 1024)  # 1KB file
-        
-        # Note: With max_file_size_mb=0, any file would exceed
-        # But Pydantic validates that max_file_size_mb > 0
-        # So we test with a custom approach
-        validator = FileValidator(config=FileValidationConfig(max_file_size_mb=1))
+        large_file.write_text("x" * 1024)
+
+        # Set limit to 0.0001 MB (approx 105 bytes), which is less than 1KB (1024 bytes)
+        # 0.0001 * 1024 * 1024 = 104.85 bytes
+        validator = FileValidator(config=FileValidationConfig(max_file_size_mb=0.0001))
         result = validator.validate_file(str(large_file))
-        
-        # 1KB is well under 1MB, so should pass
-        assert result.is_valid is True
+
+        assert result.is_valid is False
+        assert "File size exceeds" in result.error_message
 
     def test_file_size_in_result(self, valid_txt_path):
         """Test that file size is correctly reported in result."""

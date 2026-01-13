@@ -11,8 +11,8 @@ Tests:
 import os
 import sys
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
+from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -86,6 +86,12 @@ class TestGetChunker:
         
         assert type(chunker_upper).__name__ == type(chunker_lower).__name__
         assert type(chunker_upper).__name__ == type(chunker_mixed).__name__
+
+    def test_chunk_size_less_than_overlap_raises_error(self):
+        """Test that validation fails when chunk_size < chunk_overlap."""
+        with pytest.raises(ValueError) as excinfo:
+            get_chunker(chunk_size=100, chunk_overlap=200)
+        assert "must be greater than" in str(excinfo.value)
 
 
 class TestTextLengthAdaptiveSelection:
@@ -169,7 +175,7 @@ class TestChunkText:
 
     def test_chunk_text_with_token_chunker(self, small_text):
         """Test chunk_text with token chunker."""
-        chunks = chunk_text(small_text, chunker_type="token", chunk_size=50)
+        chunks = chunk_text(small_text, chunker_type="token", chunk_size=50, chunk_overlap=10)
         assert isinstance(chunks, list)
         assert len(chunks) > 0
 

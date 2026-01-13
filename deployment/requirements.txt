@@ -40,8 +40,8 @@ streamlit>=1.31.0
 fastapi>=0.104.0
 pydantic>=2.5.0
 pydantic-settings>=2.0.0  # For configuration management
-pydantic-ai>=0.0.7
-pydantic-ai-slim[google]
+pydantic-ai>=1.41.0
+pydantic-ai-slim[google]>=1.41.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 
