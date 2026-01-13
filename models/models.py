@@ -88,6 +88,8 @@ class RAGResponseMetadata(BaseModel):
         None, description="Whether reranking was applied")
     avg_rerank_score: Optional[float] = Field(
         None, description="Average reranking score")
+    graph_enriched: Optional[bool] = Field(
+        None, description="Whether knowledge graph entities were used to enrich results")
 
 
 class RAGResponse(BaseModel):

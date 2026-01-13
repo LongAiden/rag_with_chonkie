@@ -55,6 +55,8 @@ Unit tests are isolated and don't require external services:
 - `tests/unit/test_text_cleaning.py` - Text cleaning pipeline
 - `tests/unit/test_embedding_generator.py` - Embedding generation
 - `tests/unit/test_file_validator.py` - File validation
+- `tests/unit/test_app_config.py` - Application configuration
+- `tests/unit/test_llm_provider.py` - LLM integration
 
 #### 3. Run Only Integration Tests (Requires Database)
 
@@ -272,7 +274,9 @@ tests/
 │   ├── test_pdf_processor.py
 │   ├── test_text_cleaning.py
 │   ├── test_embedding_generator.py
-│   └── test_file_validator.py
+│   ├── test_file_validator.py
+│   ├── test_app_config.py
+│   └── test_llm_provider.py
 ├── integration/             # Integration tests (real dependencies)
 │   ├── conftest.py          # Integration fixtures (real DB, API)
 │   ├── test_database_connection.py

@@ -314,14 +314,14 @@ async def query_documents_form(
         <div class="source-item">
             <strong>Source {i+1}</strong> (Similarity: {source.similarity:.1%}{"" if source.rerank_score is None else f", BM25: {source.rerank_score:.3f}"})<br>
             <em>Document: {source.document_id[:8]}... | Page: {source.page_number or 'N/A'}</em><br><br>
-            {source.text}
+            <div style="white-space: pre-wrap; word-wrap: break-word;">{source.text}</div>
         </div>
         """ for i, source in enumerate(result.sources)])
 
         # Use template with substitutions
         html_content = SEARCH_RESULTS_HTML.format(
             query=query,
-            answer=result.answer.replace('\n', '<br>'),
+            answer=result.answer,
             source_count=len(result.sources),
             sources_html=sources_html,
             chunks_found=result.search_stats.chunks_found,
@@ -330,14 +330,25 @@ async def query_documents_form(
             table_used=result.table_used,
             threshold_used=f"{result.search_stats.threshold_used:.1%}",
             confidence=f"{result.search_stats.confidence:.1%}" if result.search_stats.confidence else "N/A",
-            word_count=result.search_stats.word_count or 0
+            word_count=result.search_stats.word_count or 0,
+            graph_enriched="Yes" if result.search_stats.graph_enriched else "No"
         )
 
         return html_content
 
     except Exception as e:
+        # Check if it's a rate limit error and provide helpful message
+        error_msg = str(e)
+        if any(indicator in error_msg.lower() for indicator in ["rate limit", "quota exceeded", "429", "resource exhausted"]):
+            error_msg = (
+                f"⚠️ API Rate Limit Reached\n\n"
+                f"The Gemini API rate limit has been exceeded. This typically happens during entity extraction.\n\n"
+                f"Please try again in a minute or two.\n\n"
+                f"Technical details: {error_msg}"
+            )
+
         # Return error page using template
-        return SEARCH_ERROR_HTML.format(error_message=str(e))
+        return SEARCH_ERROR_HTML.format(error_message=error_msg)
 
 
 @router.get("/stats", response_class=HTMLResponse)

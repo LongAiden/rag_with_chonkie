@@ -57,55 +57,49 @@ docker compose up --build
 
 ```
 rag_llama_index/
-├── deployment/                    # Setup & configuration
-│   ├── .env.example              # Environment template
-│   └── setup.sh                  # Automated setup script
+├── api/                          # FastAPI application
+│   ├── app.py                   # Main entry point
+│   ├── routes/                  # API routes
+│   └── templates.py             # Web UI templates
+│
+├── deployment/                   # Setup & configuration
+│   ├── .env.example             # Environment template
+│   └── setup.sh                 # Automated setup script
 │
 ├── docs/                         # Sample documents
 │   └── llama2.pdf               # Test PDF file
 │
-├── document_processing/          # Core modules
-│   ├── chunk_pdf_with_chonkie.py    # Standalone chunking
-│   ├── embed_chunks_to_db.py        # Vector embedding & storage
-│   ├── file_validator.py            # File validation
-│   ├── full_pipeline_pgvector.py    # Main FastAPI app
-│   └── templates.py                 # Web UI templates
+├── ingestion/                    # Data ingestion pipeline
+│   ├── chunking/                # Chunking strategies (Token, Recursive, Semantic)
+│   │   └── chunker_factory.py
+│   ├── embedding/               # Vector embedding generation
+│   ├── processors/              # File processors (PDF, etc.)
+│   └── pipeline.py              # Ingestion pipeline orchestration
 │
 ├── models/                       # Data schemas
 │   └── models.py                # Pydantic models
 │
-└── test/                        # Testing
-    └── test_api.py             # API tests
+└── tests/                        # Comprehensive testing suite
+    ├── unit/                    # Unit tests
+    └── integration/             # Integration tests
 ```
 
 ## 🔧 Main Components
 
-### `document_processing/chunk_pdf_with_chonkie.py`
-**Purpose**: Standalone PDF processing and semantic chunking
-- Extracts text from PDF files using PyPDF2
-- Performs semantic chunking with Chonkie library
-- Supports configurable chunk size and similarity thresholds
-- Outputs chunks for inspection
+### `ingestion/chunking/chunker_factory.py`
+**Purpose**: Centralized factory for creating text chunkers
+- Supports **Token**, **Recursive**, and **Semantic** chunking strategies
+- **Adaptive Selection**: Automatically uses simpler strategies for large valid files to ensure performance
+- **Validation**: Enforces `chunk_size > chunk_overlap` constraints
 
-### `document_processing/embed_chunks_to_db.py`
+### `ingestion/embedding`
 **Purpose**: Vector embedding generation and database storage
 - **Classes**:
   - `EmbeddingGenerator`: Creates embeddings using SentenceTransformers
   - `VectorStore`: Manages pgvector database operations
   - `ChunkEmbeddingPipeline`: End-to-end document processing
-- **Features**:
-  - Batch embedding generation
-  - pgvector similarity search
-  - Automatic database initialization
 
-### `document_processing/file_validator.py`
-**Purpose**: Comprehensive file validation and security
-- File existence and size validation (max 50MB)
-- Extension checking (.pdf, .txt, .docx)
-- File signature verification
-- Readability validation
-
-### `document_processing/full_pipeline_pgvector.py`
+### `api/app.py`
 **Purpose**: Main FastAPI application with web interface
 
 <img src="./images/fastapi.png" alt="FastAPI Interface" width="600">
@@ -233,12 +227,12 @@ docker compose logs -f
 - FastAPI web interface
 - Logfire setup
 - Organized modular structure
+- Comprehensive testing suite
 
 📋 **Todo**:
 - Advanced chunking strategies
 - Multi-modal document support
 - Caching and performance optimization
-- Comprehensive testing suite
 
 ## 🐛 Troubleshooting
 

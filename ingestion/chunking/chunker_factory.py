@@ -109,7 +109,7 @@ def get_chunker(
         cache_key = f"recursive_{chunk_size}"
         if cache_key not in _CHUNKER_CACHE:
             _CHUNKER_CACHE[cache_key] = RecursiveChunker(
-                tokenizer_or_token_counter="character",
+                tokenizer="character",
                 chunk_size=chunk_size
             )
         return _CHUNKER_CACHE[cache_key]

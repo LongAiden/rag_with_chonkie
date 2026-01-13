@@ -314,7 +314,8 @@ async def perform_document_search(
                 word_count=llm_response.word_count,
                 confidence=llm_response.confidence,
                 reranking_enabled=reranking_enabled,
-                avg_rerank_score=round(avg_rerank_score, 3) if avg_rerank_score else None
+                avg_rerank_score=round(avg_rerank_score, 3) if avg_rerank_score else None,
+                graph_enriched=enriched_chunks > 0
             ),
             table_used=table_name
         )

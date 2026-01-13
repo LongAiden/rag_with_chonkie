@@ -282,6 +282,9 @@ SEARCH_RESULTS_HTML = """
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 20px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.8;
         }}
         .sources {{
             background: #e3f2fd;
@@ -295,6 +298,9 @@ SEARCH_RESULTS_HTML = """
             margin: 10px 0;
             border-radius: 8px;
             border-left: 4px solid #007bff;
+            line-height: 1.8;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }}
         .stats {{
             background: #f8f9fa;
@@ -350,7 +356,8 @@ SEARCH_RESULTS_HTML = """
         • Table used: {table_used}<br>
         • Threshold: {threshold_used}<br>
         • Response confidence: {confidence}<br>
-        • Response word count: {word_count}
+        • Response word count: {word_count}<br>
+        • Graph enriched: {graph_enriched}
     </div>
 </body>
 </html>
@@ -374,6 +381,9 @@ SEARCH_ERROR_HTML = """
             padding: 30px;
             border-radius: 12px;
             border-left: 5px solid #f44336;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            text-align: left;
         }}
         button {{
             background: linear-gradient(135deg, #007bff, #0056b3);
