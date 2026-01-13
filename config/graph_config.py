@@ -148,7 +148,7 @@ class GraphConfig(BaseSettings):
     # Batch Processing Configuration
     # ============================================
     batch_size: int = Field(
-        default=5,
+        default=20,
         ge=1,
         le=200,
         description="Number of chunks to process per batch (smaller = safer for rate limits)"
