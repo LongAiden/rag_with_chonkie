@@ -2,53 +2,35 @@
 # RAG + Knowledge Graph Application Dockerfile
 # Multi-stage build for optimal caching
 # ============================================
+# USAGE:
+# 1. First build the base image (one-time, ~8-10 min):
+#    docker build -f deployment/Dockerfile.base -t rag-base:latest .
+# 2. Then build the app (fast, ~1-2 min):
+#    docker build -f deployment/Dockerfile -t rag-app:latest .
+# ============================================
 
-# Stage 1: Base with heavy ML dependencies (Cached)
+# Global ARGs (must be before FROM to be used in FROM)
+ARG BASE_IMAGE=rag-base:latest
 ARG PYTHON_VERSION=3.11
-FROM python:${PYTHON_VERSION}-slim AS base
+
+# Use pre-built base image with ML dependencies
+FROM ${BASE_IMAGE} AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
     VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        gcc \
-        g++ \
-        curl \
-        libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN python -m venv $VIRTUAL_ENV
-
-# Install heavy ML packages (this is the slow part - less frequent changes)
-RUN pip install --upgrade pip wheel setuptools && \
-    pip install --prefer-binary \
-        --extra-index-url https://download.pytorch.org/whl/cpu \
-        "torch>=2.3.1,<2.6.0" \
-        "sentence-transformers>=3.0.0" \
-        "spacy>=3.7.0" \
-        "spacy-transformers>=1.3.0" \
-        "numpy>=2.0.0,<3.0" \
-        "scipy>=1.10.0,<1.15.0"
-
-# Download spaCy model
-RUN python -m spacy download en_core_web_sm --quiet || true
-
-# Stage 2: Builder for application dependencies
-FROM base AS builder
-
 WORKDIR /build
 
-# Install only the lighter dependencies (fast, changes more often)
+# Install application dependencies (fast - ML packages already in base)
 COPY deployment/requirements.txt .
-RUN pip install --prefer-binary -r requirements.txt
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
-# Stage 3: Runtime image (stays lean)
-FROM python:${PYTHON_VERSION}-slim
+# Stage 2: Runtime image (stays lean)
+FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
