@@ -5,78 +5,101 @@ A production-ready Retrieval-Augmented Generation (RAG) system built with FastAP
 ## 📋 Installation & Setup
 
 ### 1. Prerequisites
-- Python 3.8+
-- PostgreSQL 14+
-- Homebrew (for macOS)
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) installed
+- 8GB+ available RAM
+- Git
 
 ### 2. Quick Setup
+
 ```bash
-# Copy environment template
-cp deployment/.env.example deployment/.env
+# 1. Clone the repository
+git clone <repo-url>
+cd rag_with_llama
 
-# Edit deployment/.env with your credentials:
-POSTGRES_USER=your_username
-POSTGRES_PASSWORD=your_password
-POSTGRES_DB=rag_db
-GOOGLE_API_KEY=your_gemini_api_key
+# 2. Create environment file
+cp .env.example .env
 
-# Run automated setup
-bash deployment/setup.sh
+# 3. Edit .env with your API keys
+# Required: GOOGLE_API_KEY
+# Optional: LOGFIRE_WRITE_TOKEN, APP_ACCESS_PASSWORD
+nano .env  # or use your preferred editor
+
+# 4. Build and run all services
+docker compose up --build
+
+# Access the application at:
+# - API: http://localhost:8000
+# - Health Check: http://localhost:8000/health
+# - pgAdmin (optional): http://localhost:5050
+```
+
+**Platform-Specific Notes:**
+- **Mac**: Works on both Intel and Apple Silicon (M1/M2/M3). Ensure Docker Desktop has 8GB+ memory allocated in Settings → Resources
+- **Windows**: WSL2 backend recommended. Use `build.bat` for optimized builds
+- **Linux**: Native performance (fastest). Use `./build.sh` for optimized builds
+
+**Stopping Services:**
+```bash
+docker compose down
+```
+
+**Rebuilding After Changes:**
+```bash
+# Code changes only (fast - ~30 seconds)
+docker compose restart app celery_worker
+
+# Dependency changes (slower - ~3-5 minutes)
+docker compose up --build
 ```
 
 ## 📁 Project Structure
 
 ```
 rag_llama_index/
-├── deployment/                    # Setup & configuration
-│   ├── .env.example              # Environment template
-│   └── setup.sh                  # Automated setup script
+├── api/                          # FastAPI application
+│   ├── app.py                   # Main entry point
+│   ├── routes/                  # API routes
+│   └── templates.py             # Web UI templates
+│
+├── deployment/                   # Setup & configuration
+│   ├── .env.example             # Environment template
+│   └── setup.sh                 # Automated setup script
 │
 ├── docs/                         # Sample documents
 │   └── llama2.pdf               # Test PDF file
 │
-├── document_processing/          # Core modules
-│   ├── chunk_pdf_with_chonkie.py    # Standalone chunking
-│   ├── embed_chunks_to_db.py        # Vector embedding & storage
-│   ├── file_validator.py            # File validation
-│   ├── full_pipeline_pgvector.py    # Main FastAPI app
-│   └── templates.py                 # Web UI templates
+├── ingestion/                    # Data ingestion pipeline
+│   ├── chunking/                # Chunking strategies (Token, Recursive, Semantic)
+│   │   └── chunker_factory.py
+│   ├── embedding/               # Vector embedding generation
+│   ├── processors/              # File processors (PDF, etc.)
+│   └── pipeline.py              # Ingestion pipeline orchestration
 │
 ├── models/                       # Data schemas
 │   └── models.py                # Pydantic models
 │
-└── test/                        # Testing
-    └── test_api.py             # API tests
+└── tests/                        # Comprehensive testing suite
+    ├── unit/                    # Unit tests
+    └── integration/             # Integration tests
 ```
 
 ## 🔧 Main Components
 
-### `document_processing/chunk_pdf_with_chonkie.py`
-**Purpose**: Standalone PDF processing and semantic chunking
-- Extracts text from PDF files using PyPDF2
-- Performs semantic chunking with Chonkie library
-- Supports configurable chunk size and similarity thresholds
-- Outputs chunks for inspection
+### `ingestion/chunking/chunker_factory.py`
+**Purpose**: Centralized factory for creating text chunkers
+- Supports **Token**, **Recursive**, and **Semantic** chunking strategies
+- **Adaptive Selection**: Automatically uses simpler strategies for large valid files to ensure performance
+- **Validation**: Enforces `chunk_size > chunk_overlap` constraints
 
-### `document_processing/embed_chunks_to_db.py`
+### `ingestion/embedding`
 **Purpose**: Vector embedding generation and database storage
 - **Classes**:
   - `EmbeddingGenerator`: Creates embeddings using SentenceTransformers
   - `VectorStore`: Manages pgvector database operations
   - `ChunkEmbeddingPipeline`: End-to-end document processing
-- **Features**:
-  - Batch embedding generation
-  - pgvector similarity search
-  - Automatic database initialization
 
-### `document_processing/file_validator.py`
-**Purpose**: Comprehensive file validation and security
-- File existence and size validation (max 50MB)
-- Extension checking (.pdf, .txt, .docx)
-- File signature verification
-- Readability validation
-
-### `document_processing/full_pipeline_pgvector.py`
+### `api/app.py`
 **Purpose**: Main FastAPI application with web interface
 
 <img src="./images/fastapi.png" alt="FastAPI Interface" width="600">
@@ -101,13 +124,13 @@ rag_llama_index/
 
 ## 🚀 Usage
 
-### 1. Start the Application
-```bash
-cd document_processing
-python full_pipeline_pgvector.py
-```
-Access webUI at: `http://localhost:8000`
-Access FastAPI Swagger UI: `http://127.0.0.1:8000/docs`
+### 1. Access the Application
+
+After running `docker compose up`, access:
+- Web UI: `http://localhost:8000`
+- FastAPI Swagger UI: `http://localhost:8000/docs`
+- Health Check: `http://localhost:8000/health`
+- pgAdmin (optional): `http://localhost:5050` (start with `docker compose --profile dev up`)
 
 ### 2. Web Interface Usage
 1. **Upload Documents**: Select PDF/TXT files, configure chunking parameters
@@ -145,7 +168,24 @@ curl -X POST "http://localhost:8000/query" \
   -d '{"query": "machine learning", "limit": 5}'
 ```
 
-### 4. Logfire Usage:
+### 4. View Logs
+
+**Application logs:**
+```bash
+docker compose logs -f app
+```
+
+**Celery worker logs:**
+```bash
+docker compose logs -f celery_worker
+```
+
+**All services:**
+```bash
+docker compose logs -f
+```
+
+### 5. Logfire Usage:
 - Use Logfire to log steps from end to end
     <img src="./images/logfire_example.png" alt="Logfire" width="600">
 
@@ -187,29 +227,51 @@ curl -X POST "http://localhost:8000/query" \
 - FastAPI web interface
 - Logfire setup
 - Organized modular structure
+- Comprehensive testing suite
 
 📋 **Todo**:
 - Advanced chunking strategies
 - Multi-modal document support
 - Caching and performance optimization
-- Comprehensive testing suite
 
 ## 🐛 Troubleshooting
 
-**PostgreSQL Issues:**
+**Services Not Starting:**
 ```bash
-brew services restart postgresql
-psql rag_db -c "CREATE EXTENSION vector;"
+# Check service status
+docker compose ps
+
+# View logs for specific service
+docker compose logs postgres
+docker compose logs app
+
+# Restart all services
+docker compose down
+docker compose up
 ```
 
 **Port Conflicts:**
 ```bash
-uvicorn full_pipeline_pgvector:app --port 8001
+# Check what's using port 8000
+lsof -i :8000
+
+# Change port in docker-compose.yml
+# Edit ports section: "8001:8000" instead of "8000:8000"
 ```
 
-**Dependencies:**
+**Database Issues:**
 ```bash
-pip install --upgrade -r requirements.txt
+# Reset database
+docker compose down -v  # Warning: This deletes all data
+docker compose up --build
+```
+
+**Clean Rebuild:**
+```bash
+# Remove all containers, volumes, and images
+docker compose down -v
+docker system prune -a
+docker compose up --build
 ```
 
 ## ⚠️ Known Issues

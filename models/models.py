@@ -18,6 +18,10 @@ class UploadResponse(BaseModel):
     filename: str
     message: str
     chunks_created: Optional[int] = None
+    task_id: Optional[str] = Field(
+        default=None,
+        description="Celery task id if processing/extraction was queued",
+    )
 
 
 class SupportedFileType(str, Enum):
@@ -37,7 +41,7 @@ class FileValidationResult(BaseModel):
 
 class FileValidationConfig(BaseModel):
     """Configuration for file validation."""
-    max_file_size_mb: int = Field(
+    max_file_size_mb: float = Field(
         default=50, description="Maximum file size in MB")
     allowed_extensions: List[str] = Field(default=[".pdf", ".txt"])
 
@@ -62,6 +66,10 @@ class RAGSource(BaseModel):
         default_factory=dict, description="Additional source metadata")
     rerank_score: Optional[float] = Field(
         None, description="Reranking score from cross-encoder model")
+    graph_entities: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Entities associated with this chunk from the knowledge graph"
+    )
 
 
 class RAGResponseMetadata(BaseModel):
@@ -80,6 +88,8 @@ class RAGResponseMetadata(BaseModel):
         None, description="Whether reranking was applied")
     avg_rerank_score: Optional[float] = Field(
         None, description="Average reranking score")
+    graph_enriched: Optional[bool] = Field(
+        None, description="Whether knowledge graph entities were used to enrich results")
 
 
 class RAGResponse(BaseModel):

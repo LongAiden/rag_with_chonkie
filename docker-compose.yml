@@ -1,0 +1,249 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # PostgreSQL Database with Extensions
+  # ============================================
+  postgres:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.postgres
+      cache_from:
+        - rag_postgres:latest
+    image: rag_postgres:latest
+    container_name: rag_postgres
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      # Persistent data storage
+      - postgres_data:/var/lib/postgresql/data
+      # Initialization scripts (migrations)
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - rag_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================
+  # Redis (Celery Broker/Backend)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - rag_network
+    restart: unless-stopped
+
+  # ============================================
+  # RAG Application
+  # ============================================
+  app:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+      cache_from:
+        - rag_with_llama:latest
+    image: rag_with_llama:latest
+    container_name: rag_app
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
+    environment:
+      # Database connection
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-rag_db}
+
+      # API Keys
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LOGFIRE_WRITE_TOKEN: ${LOGFIRE_WRITE_TOKEN:-}
+      LOGFIRE_READ_TOKEN: ${LOGFIRE_READ_TOKEN:-}
+
+      # Graph Configuration
+      ENABLE_ENTITY_EXTRACTION: ${ENABLE_ENTITY_EXTRACTION:-true}
+      ENTITY_CONFIDENCE_THRESHOLD: ${ENTITY_CONFIDENCE_THRESHOLD:-0.6}
+      RELATIONSHIP_CONFIDENCE_THRESHOLD: ${RELATIONSHIP_CONFIDENCE_THRESHOLD:-0.6}
+      MAX_ENTITIES_PER_CHUNK: ${MAX_ENTITIES_PER_CHUNK:-50}
+      MAX_RELATIONSHIPS_PER_CHUNK: ${MAX_RELATIONSHIPS_PER_CHUNK:-100}
+      DEFAULT_MAX_HOPS: ${DEFAULT_MAX_HOPS:-2}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+
+      # Performance
+      BATCH_SIZE: ${BATCH_SIZE:-10}
+      ENABLE_PARALLEL_EXTRACTION: ${ENABLE_PARALLEL_EXTRACTION:-true}
+      ENABLE_ENTITY_CACHING: ${ENABLE_ENTITY_CACHING:-true}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Celery broker/backend + optional FE password
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      USE_CELERY_FOR_EXTRACTION: ${USE_CELERY_FOR_EXTRACTION:-true}
+      APP_ACCESS_PASSWORD: ${APP_ACCESS_PASSWORD:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount code for development (hot reload)
+      - .:/app
+      # Persistent upload storage
+      - upload_data:/app/uploads
+      # Logs
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - rag_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # ============================================
+  # Celery Worker (reuses app image - no rebuild needed)
+  # ============================================
+  celery_worker:
+    image: rag_with_llama:latest
+    container_name: rag_celery_worker
+    command: celery -A worker.celery_app worker --loglevel=info
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-rag_db}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      ENABLE_ENTITY_EXTRACTION: ${ENABLE_ENTITY_EXTRACTION:-true}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      USE_CELERY_FOR_EXTRACTION: ${USE_CELERY_FOR_EXTRACTION:-true}
+    volumes:
+      - .:/app
+      - upload_data:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - rag_network
+    restart: unless-stopped
+
+  # ============================================
+  # pgAdmin (Optional - Database Management UI)
+  # ============================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: rag_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@rag.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - rag_network
+    restart: unless-stopped
+    profiles:
+      - dev  # Only start with: docker-compose --profile dev up
+
+  # ============================================
+  # Test Runner Service
+  # ============================================
+  test:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.test
+    image: rag_with_llama:test
+    container_name: rag_test
+    environment:
+      # Database connection (use service name 'postgres')
+      DB_HOST: postgres
+      DB_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+
+      # API Keys
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LOGFIRE_WRITE_TOKEN: ${LOGFIRE_WRITE_TOKEN:-}
+      LOGFIRE_READ_TOKEN: ${LOGFIRE_READ_TOKEN:-}
+
+      # LLM Configuration
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      ENTITY_EMBEDDING_MODEL: ${ENTITY_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      ENTITY_EMBEDDING_DIMENSION: 384
+
+      # Test environment
+      PYTHONPATH: /app
+    volumes:
+      # Mount tests directory for easier test development
+      - ./tests:/app/tests
+      # Mount htmlcov for coverage reports
+      - ./htmlcov:/app/htmlcov
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rag_network
+    profiles:
+      - test  # Only start with: docker-compose --profile test up
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  rag_network:
+    driver: bridge
+
+# ============================================
+# Volumes (Persistent Data)
+# ============================================
+volumes:
+  postgres_data:
+    driver: local
+  upload_data:
+    driver: local
+  pgadmin_data:
+    driver: local

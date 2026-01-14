@@ -16,4 +16,27 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-document_processing/__pycache__/
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Temporary upload directories
+temp_uploads/
+uploads/*.pdf
+uploads/*.docx
+uploads/*.txt
+!uploads/.gitkeep
+
+# Test artifacts
+htmlcov/
+.coverage
+.pytest_cache/
+.tox/
+*.cover
+.hypothesis/
+
+
+# Cursor rules
+.cursorrules
