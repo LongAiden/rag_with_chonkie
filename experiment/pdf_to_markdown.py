@@ -10,7 +10,7 @@ import fitz  # PyMuPDF
 import pandas as pd
 from pathlib import Path
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class PDFConfig(BaseModel):
@@ -110,7 +110,9 @@ class PDFToMarkdownConverter:
         return False
 
     def process_page_to_markdown(self, page_num: int) -> str:
-
+        """
+        TBD 
+        """
         # 5. SORT AND COMPILE
         # -------------------
         # Sort items by vertical position (y0), then horizontal (x0)
@@ -126,8 +128,6 @@ class PDFToMarkdownConverter:
     def write_markdown(
         self,
         output_path: str,
-        start_page: Optional[int] = None,
-        end_page: Optional[int] = None
     ) -> MarkdownOutput:
         """
         Process PDF pages and write markdown to a file.
@@ -145,35 +145,14 @@ class PDFToMarkdownConverter:
             ValueError: If page range is invalid
             Exception: If writing to file fails
         """
-        # Use provided values or fall back to config
-        start = start_page if start_page is not None else self.config.start_page
-        end = end_page if end_page is not None else self.config.end_page
-
-        # If end is still None, process all pages
-        if end is None:
-            end = len(self.doc)
-
-        # Validate page range
-        if start < 0:
-            raise ValueError(f"start_page must be non-negative, got {start}")
-
-        if end > len(self.doc):
-            raise ValueError(
-                f"end_page ({end}) exceeds document length ({len(self.doc)})"
-            )
-
-        if start >= end:
-            raise ValueError(
-                f"start_page ({start}) must be less than end_page ({end})"
-            )
-
         output_file = Path(output_path)
+        page_nums = self.doc.page_count
 
         try:
             full_markdown = ""
             pages_processed = 0
 
-            for page_num in range(start, end):
+            for page_num in range(0, page_nums+1):
                 try:
                     # Add a separator between pages
                     page_markdown = self.process_page_to_markdown(page_num)
@@ -237,7 +216,7 @@ if __name__ == "__main__":
         header_size_threshold_h2=14
     )
 
-    with PDFToMarkdownConverter(pdf_file, config=config, output=output_file) as converter:
+    with PDFToMarkdownConverter(pdf_file, output=output_file, config=config) as converter:
         print(f"Processing PDF: {pdf_file}")
         print(f"Total pages: {len(converter.doc)}")
 

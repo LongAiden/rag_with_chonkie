@@ -1,24 +1,22 @@
-[Page 122]
+[Page 501]
 
 <image> image <image>
 
-Figure 3-3. Decision threshold and precision/recall tradeoff
+Figure 14-25. A Fully Convolutional Network Processing a Small Image (left) and a Large One (right)
 
-Scikit-Learn does not let you set the threshold directly, but it does give you access to the decision scores that it uses to make predictions. Instead of calling the classifier’s predict()  method, you can call its  decision_function()  method, which returns a score for each instance, and then make predictions based on those scores using any threshold you want:
+## You Only Look Once (YOLO)
 
->>>  y_scores   =   sgd_clf . decision_function ([ some_digit ]) >>>  y_scores array([2412.53175101]) >>>  threshold   =   0 >>>  y_some_digit_pred   =  ( y_scores   >   threshold ) array([ True])
+YOLO is an extremely fast and accurate object detection architecture proposed by Joseph Redmon et al. in a  2015 paper 26 , and subsequently improved  in 2016 27
 
-The  SGDClassifier  uses a threshold equal to 0, so the previous code returns the same result as the  predict()  method (i.e.,  True ). Let’s raise the threshold:
+(YOLOv2) and  in 2018 28  (YOLOv3). It is so fast that it can run in realtime on a video (check out this nice  demo ).
 
->>>  threshold   =   8000 >>>  y_some_digit_pred   =  ( y_scores   >   threshold ) >>>  y_some_digit_pred array([False])
+YOLOv3’s architecture is quite similar to the one we just discussed, but with a few important differences:
 
-This confirms that raising the threshold decreases recall. The image actually repre‐ sents a 5, and the classifier detects it when the threshold is 0, but it misses it when the threshold is increased to 8,000.
+26   “You Only Look Once: Unified, Real-Time Object Detection,” J. Redmon, S. Divvala, R. Girshick, A. Farhadi (2015).
 
-Now how do you decide which threshold to use? For this you will first need to get the scores of all instances in the training set using the  cross_val_predict()  function again, but this time specifying that you want it to return decision scores instead of predictions:
+27   “YOLO9000: Better, Faster, Stronger,” J. Redmon, A. Farhadi (2016).
 
-y_scores   =   cross_val_predict ( sgd_clf ,  X_train ,  y_train_5 ,  cv = 3 ,                               method = "decision_function" )
+28   “YOLOv3: An Incremental Improvement,” J. Redmon, A. Farhadi (2018).
 
-Now with these scores you can compute precision and recall for all possible thresh‐ olds using the  precision_recall_curve()  function:
-
-96  |  Chapter 3: Classification
+Object Detection  |  475
 
