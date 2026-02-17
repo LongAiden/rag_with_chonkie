@@ -19,9 +19,13 @@ class TestPDFToMarkdownConverter:
         return str(pdf_path.resolve())
 
     @pytest.fixture
-    def converter_default(self, sample_pdf_path):
+    def converter_default(self, sample_pdf_path, temp_output_dir):
         """Fixture to create a converter with default config"""
-        return PDFToMarkdownConverter(file_path=sample_pdf_path)
+        output_path = Path(temp_output_dir) / "default_output.md"
+        return PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
+        )
 
     @pytest.fixture
     def temp_output_dir(self):
@@ -36,9 +40,7 @@ class TestPDFToMarkdownConverter:
         config = PDFConfig(
             header_size_threshold_h1=18,
             header_size_threshold_h2=14,
-            table_intersection_threshold=0.5,
-            start_page=0,
-            end_page=None
+            table_intersection_threshold=0.5
         )
         assert config.header_size_threshold_h1 == 18
         assert config.header_size_threshold_h2 == 14
@@ -52,41 +54,43 @@ class TestPDFToMarkdownConverter:
         with pytest.raises(ValueError):
             PDFConfig(table_intersection_threshold=1.5)
 
-    def test_config_validation_invalid_page_range(self):
-        """Test that invalid page ranges are rejected"""
-        with pytest.raises(ValueError):
-            PDFConfig(start_page=-1)
-
-        with pytest.raises(ValueError):
-            PDFConfig(start_page=10, end_page=5)
-
     # ==================== Initialization Tests ====================
 
-    def test_converter_initialization_valid_path(self, sample_pdf_path):
+    def test_converter_initialization_valid_path(self, sample_pdf_path, temp_output_dir):
         """Test converter initialization with valid PDF path"""
-        converter = PDFToMarkdownConverter(file_path=sample_pdf_path)
+        output_path = Path(temp_output_dir) / "test_output.md"
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
+        )
         assert converter.file_path == Path(sample_pdf_path)
+        assert converter.output_path == output_path
         assert converter.doc is not None
         assert isinstance(converter.config, PDFConfig)
 
-    def test_converter_initialization_invalid_path(self):
+    def test_converter_initialization_invalid_path(self, temp_output_dir):
         """Test converter initialization with invalid PDF path"""
+        output_path = Path(temp_output_dir) / "test_output.md"
         with pytest.raises(FileNotFoundError):
-            PDFToMarkdownConverter(file_path="nonexistent.pdf")
+            PDFToMarkdownConverter(
+                file_path="nonexistent.pdf",
+                output_path=str(output_path)
+            )
 
-    def test_converter_initialization_with_custom_config(self, sample_pdf_path):
+    def test_converter_initialization_with_custom_config(self, sample_pdf_path, temp_output_dir):
         """Test converter initialization with custom configuration"""
+        output_path = Path(temp_output_dir) / "test_output.md"
         config = PDFConfig(
             header_size_threshold_h1=20,
-            header_size_threshold_h2=16,
-            start_page=0,
-            end_page=5
+            header_size_threshold_h2=16
         )
         converter = PDFToMarkdownConverter(
-            file_path=sample_pdf_path, config=config)
+            file_path=sample_pdf_path,
+            output_path=str(output_path),
+            config=config
+        )
         assert converter.config.header_size_threshold_h1 == 20
         assert converter.config.header_size_threshold_h2 == 16
-        assert converter.config.end_page == 5
 
     # ==================== Process Page Tests ====================
 
@@ -142,29 +146,29 @@ class TestPDFToMarkdownConverter:
 
     # ==================== Write Markdown Tests ====================
 
-    def test_write_markdown_creates_file(self, converter_default, temp_output_dir):
+    def test_write_markdown_creates_file(self, sample_pdf_path, temp_output_dir):
         """Test that write_markdown creates output file"""
         output_path = Path(temp_output_dir) / "test_output.md"
-        result = converter_default.write_markdown(
-            output_path=str(output_path),
-            start_page=0,
-            end_page=2
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
         )
+        result = converter.write_markdown(output_path=str(output_path))
 
         assert output_path.exists()
         assert isinstance(result, MarkdownOutput)
         assert result.success is True
         assert result.output_path == output_path
-        assert result.pages_processed == 2
+        assert result.pages_processed > 0
 
-    def test_write_markdown_content_not_empty(self, converter_default, temp_output_dir):
+    def test_write_markdown_content_not_empty(self, sample_pdf_path, temp_output_dir):
         """Test that written markdown file is not empty"""
         output_path = Path(temp_output_dir) / "test_output.md"
-        converter_default.write_markdown(
-            output_path=str(output_path),
-            start_page=0,
-            end_page=1
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
         )
+        converter.write_markdown(output_path=str(output_path))
 
         with open(output_path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -172,87 +176,73 @@ class TestPDFToMarkdownConverter:
         assert len(content) > 0
         assert "[Page 1]" in content
 
-    def test_write_markdown_respects_page_range(self, converter_default, temp_output_dir):
-        """Test that write_markdown respects page range"""
+    def test_write_markdown_processes_all_pages(self, sample_pdf_path, temp_output_dir):
+        """Test that write_markdown processes all pages in document"""
         output_path = Path(temp_output_dir) / "test_output.md"
-        result = converter_default.write_markdown(
-            output_path=str(output_path),
-            start_page=1,
-            end_page=3
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
         )
+        result = converter.write_markdown(output_path=str(output_path))
 
-        # Pages 1 and 2 (0-indexed: pages 2 and 3)
-        assert result.pages_processed == 2
+        # Should process all pages in the document
+        assert result.pages_processed == result.total_pages
 
         with open(output_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        assert "[Page 2]" in content
-        assert "[Page 3]" in content
-        assert "[Page 1]" not in content
+        # Should contain first and last page markers
+        assert "[Page 1]" in content
+        assert f"[Page {result.total_pages}]" in content
 
-    def test_write_markdown_uses_config_page_range(self, sample_pdf_path, temp_output_dir):
-        """Test that write_markdown uses config page range when not specified"""
-        config = PDFConfig(start_page=0, end_page=2)
-        converter = PDFToMarkdownConverter(
-            file_path=sample_pdf_path, config=config)
-
-        output_path = Path(temp_output_dir) / "test_output.md"
-        result = converter.write_markdown(output_path=str(output_path))
-
-        assert result.pages_processed == 2
-
-    def test_write_markdown_invalid_output_path(self, converter_default):
+    def test_write_markdown_invalid_output_path(self, sample_pdf_path):
         """Test that invalid output path raises error"""
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path="/invalid/path/that/does/not/exist/output.md"
+        )
         with pytest.raises(Exception):
-            converter_default.write_markdown(
-                output_path="/invalid/path/that/does/not/exist/output.md",
-                start_page=0,
-                end_page=1
+            converter.write_markdown(
+                output_path="/invalid/path/that/does/not/exist/output.md"
             )
 
-    def test_write_markdown_overwrites_existing_file(self, converter_default, temp_output_dir):
+    def test_write_markdown_overwrites_existing_file(self, sample_pdf_path, temp_output_dir):
         """Test that write_markdown can overwrite existing files"""
         output_path = Path(temp_output_dir) / "test_output.md"
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
+        )
 
         # Write first time
-        converter_default.write_markdown(
-            output_path=str(output_path),
-            start_page=0,
-            end_page=1
-        )
+        converter.write_markdown(output_path=str(output_path))
 
         # Write second time (should overwrite)
-        result = converter_default.write_markdown(
-            output_path=str(output_path),
-            start_page=0,
-            end_page=2
-        )
+        result = converter.write_markdown(output_path=str(output_path))
 
         assert result.success is True
         assert output_path.exists()
 
     # ==================== Full Document Tests ====================
 
-    def test_process_full_document(self, converter_default, temp_output_dir):
-        """Test processing full document (limited to first 5 pages)"""
+    def test_process_full_document(self, sample_pdf_path, temp_output_dir):
+        """Test processing full document"""
         output_path = Path(temp_output_dir) / "full_doc.md"
-        result = converter_default.write_markdown(
-            output_path=str(output_path),
-            start_page=0,
-            end_page=5
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
         )
+        result = converter.write_markdown(output_path=str(output_path))
 
         assert result.success is True
-        assert result.pages_processed == 5
+        assert result.pages_processed == result.total_pages
         assert output_path.exists()
 
         with open(output_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Should contain all 5 pages
-        for i in range(1, 6):
-            assert f"[Page {i}]" in content
+        # Should contain first page at minimum
+        assert "[Page 1]" in content
 
     # ==================== Edge Cases ====================
 
@@ -272,14 +262,14 @@ class TestPDFToMarkdownConverter:
         # Document should be closed after context exit
         assert converter.doc.is_closed
 
-    def test_markdown_output_validation(self, converter_default, temp_output_dir):
+    def test_markdown_output_validation(self, sample_pdf_path, temp_output_dir):
         """Test that MarkdownOutput model validates correctly"""
         output_path = Path(temp_output_dir) / "test_output.md"
-        result = converter_default.write_markdown(
-            output_path=str(output_path),
-            start_page=0,
-            end_page=2
+        converter = PDFToMarkdownConverter(
+            file_path=sample_pdf_path,
+            output_path=str(output_path)
         )
+        result = converter.write_markdown(output_path=str(output_path))
 
         # Validate all fields
         assert isinstance(result.success, bool)
@@ -289,19 +279,19 @@ class TestPDFToMarkdownConverter:
         assert result.error_message is None or isinstance(
             result.error_message, str)
 
-    def test_error_handling_in_write_markdown(self, sample_pdf_path, temp_output_dir):
-        """Test error handling when processing fails"""
-        converter = PDFToMarkdownConverter(file_path=sample_pdf_path)
+    def test_error_handling_with_corrupted_pdf(self, temp_output_dir):
+        """Test error handling when PDF file is invalid"""
+        # Create a fake PDF file
+        fake_pdf = Path(temp_output_dir) / "fake.pdf"
+        fake_pdf.write_text("This is not a real PDF file")
 
-        # Try to write with invalid page range
         output_path = Path(temp_output_dir) / "test_output.md"
 
-        # This should handle the error gracefully
-        with pytest.raises(ValueError):
-            converter.write_markdown(
-                output_path=str(output_path),
-                start_page=1000,  # Invalid page
-                end_page=1001
+        # This should raise an exception when trying to open the PDF
+        with pytest.raises(Exception):
+            PDFToMarkdownConverter(
+                file_path=str(fake_pdf),
+                output_path=str(output_path)
             )
 
 

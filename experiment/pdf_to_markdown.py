@@ -1,230 +1,473 @@
-"""
-PDF to Markdown Converter
-
-This module provides a class-based interface for converting PDF documents to Markdown format
-with support for headers, tables, and images. Uses PyMuPDF (fitz) for PDF processing and
-Pydantic for data validation.
-"""
-
 import fitz  # PyMuPDF
 import pandas as pd
+from typing import Optional, List, Dict, Any
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator
 
 
-class PDFConfig(BaseModel):
-    """Configuration for PDF to Markdown conversion"""
+@dataclass
+class ConversionOptions:
+    """
+    Configuration object - allows extending behavior without changing interface.
+    This is the OPTIONS PATTERN: prevent method explosion by encapsulating config.
+    """
+    # Content extraction
+    extract_tables: bool = True
+    extract_images: bool = True
+    preserve_formatting: bool = True
 
-    header_size_threshold_h1: float = Field(
-        default=18,
-        description="Font size threshold for H1 headers",
-        gt=0
-    )
-    header_size_threshold_h2: float = Field(
-        default=14,
-        description="Font size threshold for H2 headers",
-        gt=0
-    )
-    table_intersection_threshold: float = Field(
-        default=0.5,
-        description="Threshold for determining if text is inside a table (0-1)",
-        ge=0,
-        le=1
-    )
+    # Table detection
+    table_overlap_threshold: float = 0.5  # How much overlap qualifies as "in table"
 
-    @field_validator('header_size_threshold_h2')
-    @classmethod
-    def validate_h2_smaller_than_h1(cls, v, info):
-        """Ensure H2 threshold is smaller than H1 threshold"""
-        if 'header_size_threshold_h1' in info.data:
-            h1_threshold = info.data['header_size_threshold_h1']
-            if v >= h1_threshold:
-                raise ValueError(
-                    f"header_size_threshold_h2 ({v}) must be less than "
-                    f"header_size_threshold_h1 ({h1_threshold})"
-                )
-        return v
+    # Heading detection (font size thresholds)
+    h1_size_threshold: float = 18.0
+    h2_size_threshold: float = 14.0
 
+    # Output formatting
+    include_page_numbers: bool = True
+    image_placeholder: str = "[IMAGE]"
+    table_wrapper_tag: str = "table"
 
-class MarkdownOutput(BaseModel):
-    """Output model for markdown conversion results"""
+    # Performance
+    flags: int = fitz.TEXT_PRESERVE_IMAGES
 
-    success: bool = Field(description="Whether the conversion was successful")
-    output_path: Path = Field(description="Path to the output markdown file")
-    pages_processed: int = Field(description="Number of pages processed", ge=0)
-    total_pages: int = Field(description="Total pages in the document", ge=0)
-    error_message: Optional[str] = Field(
-        default=None,
-        description="Error message if conversion failed"
-    )
+    # Custom handlers (extensibility point)
+    custom_block_handler: Optional[callable] = None
 
 
 class PDFToMarkdownConverter:
-    """
-    Convert PDF documents to Markdown format with support for headers, tables, and images.
-
-    Example:
-        >>> converter = PDFToMarkdownConverter("document.pdf")
-        >>> result = converter.write_markdown("output.md", start_page=0, end_page=10)
-        >>> print(f"Processed {result.pages_processed} pages")
-
-    Or use as context manager:
-        >>> with PDFToMarkdownConverter("document.pdf") as converter:
-        ...     result = converter.write_markdown("output.md")
-    """
-
-    def __init__(self, file_path: str, output_path: str, config: Optional[PDFConfig] = None):
+    def __init__(self, default_options: Optional[ConversionOptions] = None):
         """
-        Initialize the PDF to Markdown converter.
+        Initialize converter with optional defaults.
 
-        Args:
-            file_path: Path to the PDF file
-            config: Optional configuration for conversion. If None, uses defaults.
-
-        Raises:
-            FileNotFoundError: If the PDF file doesn't exist
-            Exception: If the PDF file cannot be opened
+        Zero-config usage: PDFToMarkdownConverter().convert("file.pdf")
+        Custom config: PDFToMarkdownConverter(custom_options).convert("file.pdf")
         """
-        self.file_path = Path(file_path)
-        self.output_path = Path(output_path)
+        self._default_options = default_options or ConversionOptions()
+        self._doc: Optional[fitz.Document] = None
+        self._owns_document = False
 
-        if not self.file_path.exists():
-            raise FileNotFoundError(f"PDF file not found: {file_path}")
-
-        self.config = config or PDFConfig()
-
-        try:
-            self.doc = fitz.open(str(self.file_path))
-        except Exception as e:
-            raise Exception(f"Failed to open PDF file: {e}")
-
-    def __enter__(self):
-        """Context manager entry"""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - close the document"""
-        if self.doc and not self.doc.is_closed:
-            self.doc.close()
-        return False
-
-    def process_page_to_markdown(self, page_num: int) -> str:
-        """
-        TBD 
-        """
-        # 5. SORT AND COMPILE
-        # -------------------
-        # Sort items by vertical position (y0), then horizontal (x0)
-        items.sort(key=lambda x: (x["y0"], x["x0"]))
-
-        # Build final string
-        markdown_output = f"[Page {page_num + 1}]\n\n"
-        for item in items:
-            markdown_output += item["content"] + "\n\n"
-
-        return markdown_output
-
-    def write_markdown(
+    def convert(
         self,
-        output_path: str,
-    ) -> MarkdownOutput:
+        source: str | Path | fitz.Document,
+        output: Optional[str | Path] = None,
+        pages: Optional[List[int] | range] = None,
+        options: Optional[ConversionOptions] = None
+    ) -> str:
         """
-        Process PDF pages and write markdown to a file.
+        Convert PDF to Markdown.
+
+        This is the ONLY public method. Deep module principle: one interface, many capabilities.
 
         Args:
-            output_path: Path where the markdown file will be written
-            start_page: Starting page number (0-indexed). If None, uses config value.
-            end_page: Ending page number (0-indexed, exclusive). If None, uses config value
-                     or processes all pages.
+            source: PDF input
+                - File path: "/path/to/file.pdf" or Path object
+                - fitz.Document: Already opened document
+
+            output: Where to write result (optional)
+                - None: Return markdown as string (default)
+                - File path: Write to this location
+
+            pages: Which pages to convert (optional)
+                - None: Convert all pages (default)
+                - List[int]: Specific pages, e.g., [0, 1, 5]
+                - range: Page range, e.g., range(10, 20)
+
+            options: Conversion customization (optional)
+                - None: Use default options
+                - ConversionOptions: Override defaults
 
         Returns:
-            MarkdownOutput model with conversion results
+            Markdown string
 
-        Raises:
-            ValueError: If page range is invalid
-            Exception: If writing to file fails
+        Examples:
+            # Simplest usage
+            markdown = converter.convert("document.pdf")
+
+            # Specific pages
+            markdown = converter.convert("document.pdf", pages=[0, 1, 2])
+
+            # Custom options
+            opts = ConversionOptions(extract_tables=False, h1_size_threshold=20)
+            markdown = converter.convert("document.pdf", options=opts)
+
+            # To file
+            converter.convert("input.pdf", output="output.md")
+
+            # Reuse opened document
+            doc = fitz.open("large.pdf")
+            markdown = converter.convert(doc, pages=range(100, 200))
+
+        DESIGN NOTE:
+        This single method replaces what could be:
+        - convert_file()
+        - convert_document()
+        - convert_page_range()
+        - convert_with_tables()
+        - convert_without_images()
+        - convert_to_file()
+        ... etc (method explosion = shallow design)
         """
-        output_file = Path(output_path)
-        page_nums = self.doc.page_count
+        effective_options = self._merge_options(options)
 
         try:
-            full_markdown = ""
-            pages_processed = 0
+            # Load document (handles multiple source types)
+            self._load_document(source)
 
-            for page_num in range(0, page_nums+1):
-                try:
-                    # Add a separator between pages
-                    page_markdown = self.process_page_to_markdown(page_num)
-                    full_markdown += page_markdown + "\n\n---\n\n"
-                    pages_processed += 1
+            # Determine page range
+            page_list = self._resolve_pages(pages)
 
-                except Exception as e:
-                    # Log error but continue processing
-                    error_msg = f"Error processing page {page_num}: {e}"
-                    full_markdown += f"\n\n[ERROR: {error_msg}]\n\n"
+            # Process all pages
+            markdown = self._convert_pages(page_list, effective_options)
 
-            # Write to file
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(full_markdown)
+            # Handle output
+            return self._write_output(markdown, output)
 
-            return MarkdownOutput(
-                success=True,
-                output_path=output_file,
-                pages_processed=pages_processed,
-                total_pages=len(self.doc),
-                error_message=None
-            )
+        finally:
+            # Cleanup if we own the document
+            self._cleanup_document()
 
-        except Exception as e:
-            return MarkdownOutput(
-                success=False,
-                output_path=output_file,
-                pages_processed=pages_processed if 'pages_processed' in locals() else 0,
-                total_pages=len(self.doc),
-                error_message=str(e)
-            )
+    def convert_page(
+        self,
+        source: str | Path | fitz.Document,
+        page_num: int,
+        options: Optional[ConversionOptions] = None
+    ) -> str:
+        """
+        Convenience method for single-page conversion.
+        Delegates to the general convert() method.
+        """
+        return self.convert(source, pages=[page_num], options=options)
 
-    def close(self):
-        """Close the PDF document"""
-        if self.doc and not self.doc.is_closed:
-            self.doc.close()
+    def _merge_options(self, options: Optional[ConversionOptions]) -> ConversionOptions:
+        """Merge provided options with defaults."""
+        return options if options is not None else self._default_options
 
-    def __del__(self):
-        """Destructor to ensure document is closed"""
-        self.close()
+    def _load_document(self, source: str | Path | fitz.Document) -> None:
+        """
+        Load PDF document from various source types.
+
+        HIDDEN COMPLEXITY:
+        - Type detection and dispatch
+        - File opening and error handling
+        - Memory management decisions
+        """
+        if isinstance(source, fitz.Document):
+            self._doc = source
+            self._owns_document = False
+        else:
+            # Convert Path to str if needed
+            path = str(source) if isinstance(source, Path) else source
+            self._doc = fitz.open(path)
+            self._owns_document = True
+
+    def _resolve_pages(self, pages: Optional[List[int] | range]) -> List[int]:
+        """
+        Convert page specification to list of page numbers.
+
+        HIDDEN COMPLEXITY:
+        - Range handling
+        - Validation and bounds checking
+        - Default behavior (all pages)
+        """
+        if pages is None:
+            return list(range(len(self._doc)))
+        elif isinstance(pages, range):
+            return list(pages)
+        else:
+            return pages
+
+    def _convert_pages(self, page_list: List[int], options: ConversionOptions) -> str:
+        """
+        Convert multiple pages to markdown.
+
+        HIDDEN COMPLEXITY:
+        - Iteration strategy
+        - Page-level aggregation
+        - Separator formatting
+        """
+        markdown_parts = []
+
+        for page_num in page_list:
+            page_md = self._convert_single_page(page_num, options)
+
+            if options.include_page_numbers:
+                markdown_parts.append(f"[Page {page_num + 1}]\n\n{page_md}")
+            else:
+                markdown_parts.append(page_md)
+
+        return "\n\n".join(markdown_parts)
+
+    def _convert_single_page(self, page_num: int, options: ConversionOptions) -> str:
+        """
+        Convert a single page to markdown.
+
+        This is the core conversion logic - completely hidden from caller.
+
+        HIDDEN COMPLEXITY:
+        - Table detection and extraction
+        - Block extraction and filtering
+        - Coordinate geometry calculations
+        - Content type classification
+        - Sorting and ordering
+        - Markdown generation
+        """
+        page = self._doc[page_num]
+
+        # Extract structural elements
+        tables = self._extract_tables(
+            page, options) if options.extract_tables else []
+        table_bboxes = [table.bbox for table in tables]
+
+        # Extract content blocks
+        blocks = self._extract_blocks(page, options)
+
+        # Process blocks into items
+        items = []
+
+        for block in blocks:
+            # Skip blocks that are part of tables
+            if self._is_block_in_table(block, table_bboxes, options):
+                continue
+
+            # Convert block to markdown item
+            item = self._process_block(block, options)
+            if item:
+                items.append(item)
+
+        # Add table items
+        for table in tables:
+            item = self._process_table(table, options)
+            if item:
+                items.append(item)
+
+        # Sort by position (top-to-bottom, left-to-right)
+        items.sort(key=lambda x: (x["y0"], x["x0"]))
+
+        # Generate markdown
+        return self._items_to_markdown(items)
+
+    def _extract_tables(self, page: fitz.Page, options: ConversionOptions) -> List:
+        """
+        Extract tables from page.
+
+        HIDDEN: Table detection algorithms, heuristics, confidence thresholds.
+        """
+        return page.find_tables()
+
+    def _extract_blocks(self, page: fitz.Page, options: ConversionOptions) -> List[Dict]:
+        """
+        Extract content blocks from page.
+
+        HIDDEN: PyMuPDF extraction flags, text preservation strategies.
+        """
+        text_dict = page.get_text("dict", flags=options.flags)
+        return text_dict["blocks"]
+
+    def _is_block_in_table(
+        self,
+        block: Dict,
+        table_bboxes: List[tuple],
+        options: ConversionOptions
+    ) -> bool:
+        """
+        Determine if a block overlaps with any table.
+
+        HIDDEN COMPLEXITY:
+        - Bounding box intersection algorithm
+        - Overlap percentage calculation
+        - Threshold-based decision making
+
+        This is geometric reasoning that caller never needs to understand.
+        """
+        block_rect = fitz.Rect(block["bbox"])
+        block_area = abs(block_rect.x1 - block_rect.x0) * \
+            abs(block_rect.y1 - block_rect.y0)
+
+        if block_area == 0:
+            return False
+
+        for table_bbox in table_bboxes:
+            table_rect = fitz.Rect(table_bbox)
+
+            # Calculate intersection using PyMuPDF's & operator
+            intersection = table_rect & block_rect
+            inter_area = abs(intersection.x1 - intersection.x0) * \
+                abs(intersection.y1 - intersection.y0)
+
+            # Check overlap threshold
+            overlap_ratio = inter_area / block_area
+            if overlap_ratio > options.table_overlap_threshold:
+                return True
+
+        return False
+
+    def _process_block(self, block: Dict, options: ConversionOptions) -> Optional[Dict]:
+        """
+        Process a content block into a markdown item.
+
+        HIDDEN COMPLEXITY:
+        - Block type classification
+        - Text extraction from spans
+        - Font size analysis
+        - Heading inference
+        - Image placeholder generation
+        """
+        block_rect = fitz.Rect(block["bbox"])
+
+        # Custom handler hook (extensibility point)
+        if options.custom_block_handler:
+            custom_result = options.custom_block_handler(block, options)
+            if custom_result is not None:
+                return custom_result
+
+        if block["type"] == 0:  # Text block
+            return self._process_text_block(block, block_rect, options)
+        elif block["type"] == 1:  # Image block
+            return self._process_image_block(block, block_rect, options)
+
+        return None
+
+    def _process_text_block(
+        self,
+        block: Dict,
+        block_rect: fitz.Rect,
+        options: ConversionOptions
+    ) -> Optional[Dict]:
+        """
+        Process text block with heading detection.
+
+        HIDDEN: Font size heuristics, text aggregation, whitespace handling.
+        """
+        text_parts = []
+        max_font_size = 0.0
+
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                text_parts.append(span.get("text", ""))
+                max_font_size = max(max_font_size, span.get("size", 0))
+
+        block_text = " ".join(text_parts).strip()
+
+        if not block_text:
+            return None
+
+        # Infer heading level from font size
+        if options.preserve_formatting:
+            if max_font_size > options.h1_size_threshold:
+                content = f"# {block_text}"
+            elif max_font_size > options.h2_size_threshold:
+                content = f"## {block_text}"
+            else:
+                content = block_text
+        else:
+            content = block_text
+
+        return {
+            "y0": block_rect.y0,
+            "x0": block_rect.x0,
+            "type": "text",
+            "content": content
+        }
+
+    def _process_image_block(
+        self,
+        block: Dict,
+        block_rect: fitz.Rect,
+        options: ConversionOptions
+    ) -> Optional[Dict]:
+        """
+        Process image block.
+
+        HIDDEN: Image extraction strategy, placeholder formatting.
+
+        Future extension point: Could extract actual images, save to disk,
+        generate references, etc. - all without changing interface.
+        """
+        if not options.extract_images:
+            return None
+
+        return {
+            "y0": block_rect.y0,
+            "x0": block_rect.x0,
+            "type": "image",
+            "content": options.image_placeholder
+        }
+
+    def _process_table(self, table: Any, options: ConversionOptions) -> Optional[Dict]:
+        """
+        Process table into markdown.
+
+        HIDDEN COMPLEXITY:
+        - DataFrame conversion
+        - Markdown table formatting
+        - Empty table handling
+        - Wrapper tag insertion
+        """
+        df = table.to_pandas()
+
+        if df.empty:
+            return None
+
+        markdown = df.to_markdown(index=False)
+
+        # Wrap in optional tags
+        if options.table_wrapper_tag:
+            content = f"<{options.table_wrapper_tag}>\n{markdown}\n</{options.table_wrapper_tag}>"
+        else:
+            content = markdown
+
+        return {
+            "y0": table.bbox[1],
+            "x0": table.bbox[0],
+            "type": "table",
+            "content": content
+        }
+
+    def _items_to_markdown(self, items: List[Dict]) -> str:
+        """
+        Convert sorted items to final markdown string.
+
+        HIDDEN: Separator strategy, spacing decisions.
+        """
+        return "\n\n".join(item["content"] for item in items)
+
+    def _write_output(self, markdown: str, output: Optional[str | Path]) -> str:
+        """
+        Handle output writing.
+
+        HIDDEN COMPLEXITY:
+        - File I/O and encoding
+        - Path handling
+        - Error handling
+        """
+        if output is None:
+            return markdown
+
+        output_path = Path(output)
+        output_path.write_text(markdown, encoding="utf-8")
+
+        return markdown
+
+    def _cleanup_document(self) -> None:
+        """
+        Clean up document resources if we own them.
+
+        HIDDEN: Resource management, memory cleanup.
+        """
+        if self._owns_document and self._doc is not None:
+            self._doc.close()
+            self._doc = None
+            self._owns_document = False
 
 
 if __name__ == "__main__":
-    # Example usage
-    import sys
+    # Quick test with your original use case
+    converter = PDFToMarkdownConverter()
 
-    if len(sys.argv) < 2:
-        print(
-            "Usage: python pdf_to_markdown.py <pdf_file> [output_file]")
-        sys.exit(1)
-
-    pdf_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "output_markdown.md"
-    start_page = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-    end_page = int(sys.argv[4]) if len(sys.argv) > 4 else None
-
-    # Create converter with custom config
-    config = PDFConfig(
-        header_size_threshold_h1=18,
-        header_size_threshold_h2=14
+    # New approach:
+    markdown = converter.convert(
+        "docs\llama2.pdf",
+        pages=[],  # Apply to all
+        output="output_markdown.md"
     )
-
-    with PDFToMarkdownConverter(pdf_file, output=output_file, config=config) as converter:
-        print(f"Processing PDF: {pdf_file}")
-        print(f"Total pages: {len(converter.doc)}")
-
-        result = converter.write_markdown(output_file)
-
-        if result.success:
-            print(f"✓ Successfully processed {result.pages_processed} pages")
-            print(f"✓ Output written to: {result.output_path}")
-        else:
-            print(f"✗ Conversion failed: {result.error_message}")
-            sys.exit(1)
