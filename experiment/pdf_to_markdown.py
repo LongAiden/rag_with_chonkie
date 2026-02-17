@@ -324,7 +324,7 @@ class PDFToMarkdownConverter:
         if block["type"] == 0:  # Text block
             return self._process_text_block(block, block_rect, options)
         elif block["type"] == 1:  # Image block
-            return self._process_image_block(block, block_rect, options)
+            return self._process_image_block(block_rect, options)
 
         return None
 
@@ -372,7 +372,6 @@ class PDFToMarkdownConverter:
 
     def _process_image_block(
         self,
-        block: Dict,
         block_rect: fitz.Rect,
         options: ConversionOptions
     ) -> Optional[Dict]:
