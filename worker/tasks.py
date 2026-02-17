@@ -32,7 +32,8 @@ def run_entity_extraction_task(
     """
     Extract graph entities/relationships for a document asynchronously.
     """
-    target_table = table_name or os.getenv("DEFAULT_TABLE_NAME", "document_chunks")
+    target_table = table_name or os.getenv(
+        "DEFAULT_TABLE_NAME", "document_chunks")
     return asyncio.run(_run_entity_extraction(document_id, target_table))
 
 
@@ -65,7 +66,7 @@ async def _process_upload(
         }
 
     pipeline = await get_pipeline(table_name)
-    processed_id = await pipeline.process_document(
+    processed_id = await pipeline.ingest_document(
         file_path=temp_path,
         chunk_size=chunk_size,
         similarity_threshold=DEFAULT_CHUNKING_SIMILARITY,
@@ -136,7 +137,8 @@ async def _process_upload_batch(file_items: List[Dict[str, Any]]) -> List[Dict[s
             temp_path=item["temp_path"],
             document_id=item["document_id"],
             filename=item["filename"],
-            content_type=item.get("content_type") or "application/octet-stream",
+            content_type=item.get(
+                "content_type") or "application/octet-stream",
             file_size=item.get("file_size") or 0,
             chunk_size=item.get("chunk_size") or 512,
             table_name=item.get("table_name") or "document_chunks",
