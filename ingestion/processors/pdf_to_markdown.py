@@ -461,12 +461,9 @@ class PDFToMarkdownConverter:
 
 
 if __name__ == "__main__":
-    # Quick test with your original use case
     converter = PDFToMarkdownConverter()
-
-    # New approach:
     markdown = converter.convert(
-        "docs\llama2.pdf",
-        pages=[],  # Apply to all
-        output="output_markdown.md"
+        "input/pdf/llama2.pdf",
+        pages=None,  # None = all pages; [] would convert zero pages (bug-prone)
+        output="input/markdown/llama2.md"
     )

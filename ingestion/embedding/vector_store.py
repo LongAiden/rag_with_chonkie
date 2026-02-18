@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
 import os
+import re
 import json
 import uuid
 import asyncpg
@@ -503,20 +504,55 @@ class ChunkEmbeddingPipeline:
 
         print(f"Processing document: {filename} (ID: {document_id})")
 
-        # Step 1: Get the appropriate processor (Factory Pattern)
-        processor = get_processor_for_file(str(file_path))
+        # Step 1: PDF → Markdown → MarkdownChunker
+        #         Non-PDF (DOCX, TXT) → raw text extraction via processor factory
+        if file_path.suffix.lower() == '.pdf':
+            from ingestion.processors.pdf_to_markdown import PDFToMarkdownConverter
+            from ingestion.chunking.chunker_factory import chunk_markdown
 
-        # Step 2: Process document with selected chunking strategy
-        chunks = processor.process_document(
-            file_path=str(file_path),
-            chunk_size=chunk_size,
-            similarity_threshold=similarity_threshold,
-            embedding_model=None,  # Default model
-            chunker_type=chunker_type  # Strategy: "token", "recursive", or "semantic"
-        )
+            # Convert PDF to Markdown and save to input/markdown/
+            markdown_dir = Path("input/markdown")
+            markdown_dir.mkdir(parents=True, exist_ok=True)
+            markdown_path = markdown_dir / file_path.with_suffix('.md').name
 
-        print(
-            f"Created {len(chunks)} chunks using processor pattern (Abstract Method + Factory)")
+            converter = PDFToMarkdownConverter()
+            markdown = converter.convert(str(file_path), output=str(markdown_path))
+
+            logfire.info("PDF converted to Markdown",
+                         source=str(file_path),
+                         output=str(markdown_path),
+                         markdown_length=len(markdown))
+
+            # Chunk the Markdown (defaults to MarkdownChunker)
+            chunks = chunk_markdown(
+                markdown,
+                chunker_type=chunker_type,
+                chunk_size=chunk_size,
+                chunk_overlap=50,
+                similarity_threshold=similarity_threshold,
+            )
+
+            # Assign page numbers by scanning back for [Page N] markers
+            for chunk in chunks:
+                if hasattr(chunk, 'start_index'):
+                    segment = markdown[:chunk.start_index]
+                    matches = list(re.finditer(r'\[Page (\d+)\]', segment))
+                    chunk.page_number = int(matches[-1].group(1)) if matches else 1
+                else:
+                    chunk.page_number = 1
+
+        else:
+            # Non-PDF: DOCX, TXT — existing processor flow
+            processor = get_processor_for_file(str(file_path))
+            chunks = processor.process_document(
+                file_path=str(file_path),
+                chunk_size=chunk_size,
+                similarity_threshold=similarity_threshold,
+                embedding_model=None,
+                chunker_type=chunker_type,
+            )
+
+        print(f"Created {len(chunks)} chunks from {filename}")
 
         # Prepare chunks for embedding - filter out chunks with invalid text
         valid_chunks = []
