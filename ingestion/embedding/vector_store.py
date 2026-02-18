@@ -542,7 +542,7 @@ class ChunkEmbeddingPipeline:
                     chunk.page_number = 1
 
         else:
-            # Non-PDF: DOCX, TXT — existing processor flow
+            # Non-PDF: DOCX, TXT - existing processor flow
             processor = get_processor_for_file(str(file_path))
             chunks = processor.process_document(
                 file_path=str(file_path),

@@ -1,5 +1,5 @@
 """
-Re-export shim — configuration has moved to config/app_config.py.
+Re-export shim - configuration has moved to config/app_config.py.
 """
 from config.app_config import (
     AppConfig,

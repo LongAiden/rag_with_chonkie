@@ -9,11 +9,11 @@ PDF file  →  PDFToMarkdownConverter  →  MarkdownChunker  →  pgvector  → 
 input/pdf/       (ingestion)            (chonkie)           (PostgreSQL)   (BM25)            (pydantic-ai)
 ```
 
-1. **Upload a PDF** — the app converts it to Markdown and stores in `input/markdown/`
-2. **Chunk** — the Markdown is split into chunks using a structure-aware MarkdownChunker
-3. **Embed** — each chunk is embedded with `all-MiniLM-L6-v2` and stored in pgvector
-4. **Query** — a question triggers vector similarity search + BM25 reranking
-5. **Answer** — top chunks are passed to Gemini which returns a structured answer
+1. **Upload a PDF** - the app converts it to Markdown and stores in `input/markdown/`
+2. **Chunk** - the Markdown is split into chunks using a structure-aware MarkdownChunker
+3. **Embed** - each chunk is embedded with `all-MiniLM-L6-v2` and stored in pgvector
+4. **Query** - a question triggers vector similarity search + BM25 reranking
+5. **Answer** - top chunks are passed to Gemini which returns a structured answer
 
 ---
 
@@ -28,7 +28,7 @@ input/pdf/       (ingestion)            (chonkie)           (PostgreSQL)   (BM25
 
 ```bash
 cp .env.example .env
-# Edit .env — minimum required:
+# Edit .env - minimum required:
 #   GOOGLE_API_KEY=your-key-here
 #   POSTGRES_PASSWORD=a-secure-password
 ```
@@ -39,10 +39,10 @@ The Dockerfile uses a two-stage build. The first stage (`Dockerfile.base`) insta
 dependencies and only needs to run once. Subsequent builds are fast.
 
 ```bash
-# Step 1 — build the base image (first time only, ~8–10 min)
+# Step 1 - build the base image (first time only, ~8–10 min)
 docker build -f deployment/Dockerfile.base -t rag-base:latest .
 
-# Step 2 — build and start all services (~1–2 min)
+# Step 2 - build and start all services (~1–2 min)
 docker compose up --build
 ```
 
@@ -56,11 +56,11 @@ Open **http://localhost:8000**
 | URL | Description |
 |-----|-------------|
 | http://localhost:8000 | Web UI (upload + search) |
-| http://localhost:8000/docs | **Swagger UI — interactive API docs** |
-| http://localhost:8000/redoc | ReDoc — readable API reference |
+| http://localhost:8000/docs | **Swagger UI - interactive API docs** |
+| http://localhost:8000/redoc | ReDoc - readable API reference |
 | http://localhost:8000/health | Health check |
 
-> **Swagger UI** (`/docs`) lets you call every endpoint directly from the browser — no curl or Postman needed. Click an endpoint → **Try it out** → fill in params → **Execute**.
+> **Swagger UI** (`/docs`) lets you call every endpoint directly from the browser - no curl or Postman needed. Click an endpoint → **Try it out** → fill in params → **Execute**.
 
 ### 4. Stop services
 
@@ -77,7 +77,7 @@ docker compose down
 | `app` | 8000 | FastAPI application |
 | `postgres` | 5432 | PostgreSQL + pgvector |
 | `redis` | 6379 | Celery broker |
-| `celery_worker` | — | Background task worker |
+| `celery_worker` | - | Background task worker |
 | `pgadmin` | 5050 | DB admin UI *(dev profile only)* |
 
 ```bash
@@ -168,7 +168,7 @@ rag_with_llama/
 │   ├── celery_app.py
 │   └── tasks.py                  # Async upload task
 │
-├── graph_processing/             # Knowledge graph — DISABLED (code preserved)
+├── graph_processing/             # Knowledge graph - DISABLED (code preserved)
 │
 ├── tests/
 │   ├── unit/                     # No DB required
@@ -199,13 +199,13 @@ Copy `.env.example` to `.env` and set these values:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GOOGLE_API_KEY` | Yes | — | Gemini API key |
+| `GOOGLE_API_KEY` | Yes | - | Gemini API key |
 | `POSTGRES_PASSWORD` | Yes | `admin` | Change in production |
 | `POSTGRES_DB` | No | `rag_db` | Database name |
 | `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model to use |
 | `CHUNKER_TYPE` | No | `markdown` | `markdown` / `recursive` / `token` / `semantic` |
 | `APP_ACCESS_PASSWORD` | No | *(disabled)* | Password-protect the web UI |
-| `LOGFIRE_WRITE_TOKEN` | No | — | [Logfire](https://logfire.pydantic.dev/) monitoring |
+| `LOGFIRE_WRITE_TOKEN` | No | - | [Logfire](https://logfire.pydantic.dev/) monitoring |
 
 ---
 
@@ -303,13 +303,13 @@ docker compose up --build
 
 ---
 
-## Known Issue — Gemini `additionalProperties` Warning
+## Known Issue - Gemini `additionalProperties` Warning
 
 ```
 UserWarning: `additionalProperties` is not supported by Gemini; it will be removed from the tool JSON schema.
 ```
 
-This is a known Gemini API limitation. It does not break functionality — responses work correctly, but the `metadata` field in LLM responses will be empty. See [pydantic-ai #1469](https://github.com/pydantic/pydantic-ai/issues/1469).
+This is a known Gemini API limitation. It does not break functionality - responses work correctly, but the `metadata` field in LLM responses will be empty. See [pydantic-ai #1469](https://github.com/pydantic/pydantic-ai/issues/1469).
 
 ---
 

@@ -15,10 +15,10 @@ Since the chunker always receives **Markdown text** (not raw PDF text), the defa
 ## Available Strategies
 
 ### 1. MarkdownChunker (DEFAULT) 📄
-**Best for markdown input — structure-aware splitting**
+**Best for markdown input - structure-aware splitting**
 
 - **Speed**: Fast
-- **Quality**: Excellent — respects markdown hierarchy (headings, sections, lists)
+- **Quality**: Excellent - respects markdown hierarchy (headings, sections, lists)
 - **Use when**: Default for all documents processed through PDFToMarkdownConverter
 
 Splits on markdown-specific boundaries in order:
@@ -29,10 +29,10 @@ Splits on markdown-specific boundaries in order:
 5. Line breaks
 
 ### 2. RecursiveChunker ⚡
-**Balanced — generic text boundary splitting**
+**Balanced - generic text boundary splitting**
 
 - **Speed**: Fast (10–20 seconds for 15 MB)
-- **Quality**: Good — respects natural text boundaries (paragraphs, sentences)
+- **Quality**: Good - respects natural text boundaries (paragraphs, sentences)
 - **Use when**: Non-markdown input or when markdown structure should be ignored
 
 Splits on natural boundaries in order:
@@ -44,7 +44,7 @@ Splits on natural boundaries in order:
 6. Characters (fallback)
 
 ### 3. TokenChunker 🚀
-**Fastest — simple token-based splitting**
+**Fastest - simple token-based splitting**
 
 - **Speed**: Very fast (3–5 seconds for 15 MB)
 - **Quality**: Predictable chunk sizes; ignores text structure
@@ -53,10 +53,10 @@ Splits on natural boundaries in order:
 Simple character/token counting with overlap.
 
 ### 4. SemanticChunker 🧠
-**Highest quality — AI-powered semantic boundaries**
+**Highest quality - AI-powered semantic boundaries**
 
 - **Speed**: Very slow (5–30 minutes for 15 MB)
-- **Quality**: Best possible — finds topic changes in embedding space
+- **Quality**: Best possible - finds topic changes in embedding space
 - **Use when**: Small documents (< 500 KB) where quality matters most
 
 Uses sentence embeddings to detect semantic topic transitions.
@@ -142,13 +142,13 @@ chunks = chunk_markdown(markdown_text, chunker_type="semantic")
 **Use: TokenChunker** (`chunker_type=token`)
 - Fastest, good quality for most RAG tasks
 
-### 📄 Most Documents — Markdown Input (DEFAULT)
+### 📄 Most Documents - Markdown Input (DEFAULT)
 **Use: MarkdownChunker** (default, no parameter needed)
 - Best for documents converted via PDFToMarkdownConverter
 - Preserves section structure for better retrieval
 - **RECOMMENDED for this project's standard workflow**
 
-### 📝 Small Documents (< 500 KB) — Quality Critical
+### 📝 Small Documents (< 500 KB) - Quality Critical
 **Use: SemanticChunker** (`chunker_type=semantic`)
 - Perfect semantic boundaries
 - Very slow on larger documents
@@ -190,7 +190,7 @@ chunker = get_chunker("semantic", text_length=len(markdown_text))
 → Use `token` chunker
 
 ### SemanticChunker falling back to Recursive?
-→ Expected for documents > 100 KB — this is automatic performance protection
+→ Expected for documents > 100 KB - this is automatic performance protection
 
 ### Default chunker not working?
 → Check `CHUNKER_TYPE` environment variable

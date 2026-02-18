@@ -149,12 +149,12 @@ rag_with_llama/
 ### 1. Abstract Method + Factory (Processors)
 
 ```python
-# base_processor.py — Abstract contract
+# base_processor.py - Abstract contract
 class DocumentProcessor(ABC):
     @abstractmethod
     def extract_text(self, file_path) -> Tuple[str, PageMapping]: ...
 
-# processor_factory.py — Factory picks the right one
+# processor_factory.py - Factory picks the right one
 processor = get_processor_for_file("report.pdf")   # → PDFProcessor
 processor = get_processor_for_file("notes.docx")   # → DOCXProcessor
 ```
@@ -179,7 +179,7 @@ config.reranker = None    # Created on first use
 ### 4. Re-export Shim (backward compatibility)
 
 ```python
-# api/config.py — keeps old imports working after config moved to config/
+# api/config.py - keeps old imports working after config moved to config/
 from config.app_config import AppConfig, AppSettings, ...
 ```
 
@@ -211,8 +211,8 @@ All configuration lives in `config/app_config.py`. Key settings:
 | Embedding model | *(hardcoded)* | `all-MiniLM-L6-v2` |
 | Table name | *(param)* | `document_chunks` |
 | Chunker type | `CHUNKER_TYPE` | `markdown` |
-| Google API key | `GOOGLE_API_KEY` | — |
-| Logfire token | `LOGFIRE_WRITE_TOKEN` | — |
+| Google API key | `GOOGLE_API_KEY` | - |
+| Logfire token | `LOGFIRE_WRITE_TOKEN` | - |
 
 ---
 
@@ -248,7 +248,7 @@ result = await perform_document_search(
 
 | Feature | Location | Status |
 |---------|----------|--------|
-| Knowledge graph (entity extraction) | `graph_processing/` | Disabled — code exists, not wired to upload |
+| Knowledge graph (entity extraction) | `graph_processing/` | Disabled - code exists, not wired to upload |
 | Graph enrichment in search | `retrieval/search.py` | Removed |
 | Graph API routes | `api/routes/graph_routes.py` | Not registered in app.py |
 | Celery upload (async) | `worker/tasks.py` | Available but `celery_upload_enabled=False` by default |
@@ -258,10 +258,10 @@ result = await perform_document_search(
 ## For New Developers
 
 **Start here to understand the flow:**
-1. [api/routes/document_routes.py](../api/routes/document_routes.py) — `upload_and_process()` and `query_documents()`
-2. [ingestion/processors/pdf_to_markdown.py](../ingestion/processors/pdf_to_markdown.py) — PDF conversion
-3. [ingestion/chunking/chunker_factory.py](../ingestion/chunking/chunker_factory.py) — Chunking strategies
-4. [retrieval/search.py](../retrieval/search.py) — Search + rerank + LLM
+1. [api/routes/document_routes.py](../api/routes/document_routes.py) - `upload_and_process()` and `query_documents()`
+2. [ingestion/processors/pdf_to_markdown.py](../ingestion/processors/pdf_to_markdown.py) - PDF conversion
+3. [ingestion/chunking/chunker_factory.py](../ingestion/chunking/chunker_factory.py) - Chunking strategies
+4. [retrieval/search.py](../retrieval/search.py) - Search + rerank + LLM
 
 **Run locally:**
 ```bash

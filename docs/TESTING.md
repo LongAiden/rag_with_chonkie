@@ -20,12 +20,12 @@ pytest tests/unit/test_chunker_factory.py -v
 
 ## Test Types
 
-### Unit Tests — `tests/unit/`
+### Unit Tests - `tests/unit/`
 - **No external dependencies** (no database, no API keys)
 - Fast (< 1 second each)
 - Use mocks for heavy services
 
-### Integration Tests — `tests/integration/`
+### Integration Tests - `tests/integration/`
 - Require **PostgreSQL + pgvector** running
 - Require **`GOOGLE_API_KEY`** for LLM tests
 - Slower (2–10 seconds each)

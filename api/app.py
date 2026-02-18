@@ -51,7 +51,7 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
 
 
 # -----------------------------------------------
-# GRAPH ROUTES — currently disabled
+# GRAPH ROUTES - currently disabled
 # The knowledge-graph feature (entity extraction,
 # relationship extraction, graph-enriched search)
 # is implemented but not active.
