@@ -1,3 +1,8 @@
+from ingestion.processors.processor_factory import get_processor_for_file
+from ingestion.text_cleaning import TextCleanerFactory
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
+from sentence_transformers import SentenceTransformer
 import os
 import json
 import uuid
@@ -8,11 +13,6 @@ from pathlib import Path
 # Disable tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from sentence_transformers import SentenceTransformer
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
-from ingestion.text_cleaning import TextCleanerFactory
-from ingestion.processors.processor_factory import get_processor_for_file
 
 @dataclass
 class Chunk:
@@ -52,7 +52,7 @@ class EmbeddingGenerator:
             text = ""
         elif not isinstance(text, str):
             logfire.warn("Embedding called with non-string text, converting to string",
-                        text_type=type(text).__name__)
+                         text_type=type(text).__name__)
             text = str(text)
 
         embedding = self.model.encode(text)
@@ -82,10 +82,11 @@ class EmbeddingGenerator:
                 elif isinstance(text, (list, dict, tuple)):
                     # Complex types that can't be directly converted
                     logfire.error("Complex type encountered in embedding batch",
-                                index=i,
-                                text_type=type(text).__name__,
-                                text_value=str(text)[:200])
-                    valid_texts.append(str(text))  # Fallback to string conversion
+                                  index=i,
+                                  text_type=type(text).__name__,
+                                  text_value=str(text)[:200])
+                    # Fallback to string conversion
+                    valid_texts.append(str(text))
                     non_string_count += 1
                     problematic_items.append((i, type(text).__name__))
                 else:
@@ -95,27 +96,27 @@ class EmbeddingGenerator:
                     non_string_count += 1
             except Exception as e:
                 logfire.error("Failed to process text at index",
-                            index=i,
-                            error=str(e),
-                            text_type=type(text).__name__)
+                              index=i,
+                              error=str(e),
+                              text_type=type(text).__name__)
                 valid_texts.append("")  # Use empty string as fallback
                 problematic_items.append((i, f"error: {str(e)}"))
 
         # Log warnings if we encountered invalid texts
         if none_count > 0 or non_string_count > 0:
             logfire.warn("Invalid texts encountered in batch embedding",
-                        total_texts=len(texts),
-                        none_count=none_count,
-                        non_string_count=non_string_count,
-                        problematic_items_count=len(problematic_items))
+                         total_texts=len(texts),
+                         none_count=none_count,
+                         non_string_count=non_string_count,
+                         problematic_items_count=len(problematic_items))
 
         # Final safety check - ensure all items are strings
         final_texts = []
         for i, text in enumerate(valid_texts):
             if not isinstance(text, str):
                 logfire.error("Non-string made it through validation",
-                            index=i,
-                            type=type(text).__name__)
+                              index=i,
+                              type=type(text).__name__)
                 final_texts.append(str(text))
             else:
                 final_texts.append(text)
@@ -143,21 +144,23 @@ class EmbeddingGenerator:
 
                 safe_texts.append(text)
             except Exception as e:
-                logfire.error("Failed to process text in final cleanup", index=idx, error=str(e))
+                logfire.error(
+                    "Failed to process text in final cleanup", index=idx, error=str(e))
                 safe_texts.append(" ")  # Fallback to space
 
         # Verify the conversion worked
         logfire.info("Preparing to encode batch",
-                    total_texts=len(safe_texts),
-                    all_strings=all(isinstance(t, str) for t in safe_texts),
-                    sample_lengths=[len(t) for t in safe_texts[:5]])
+                     total_texts=len(safe_texts),
+                     all_strings=all(isinstance(t, str) for t in safe_texts),
+                     sample_lengths=[len(t) for t in safe_texts[:5]])
 
         try:
             # Force each text through encode/decode to ensure pure Python strings
             texts_to_encode = []
             for t in safe_texts:
                 # Convert to bytes and back to ensure pure string
-                clean_text = str(t).encode('utf-8', errors='replace').decode('utf-8')
+                clean_text = str(t).encode(
+                    'utf-8', errors='replace').decode('utf-8')
                 texts_to_encode.append(clean_text)
 
             # Encode in batches for efficiency (batch_size=32)
@@ -165,9 +168,9 @@ class EmbeddingGenerator:
             all_embeddings = []
 
             logfire.info("Starting batch embedding",
-                        total_texts=len(texts_to_encode),
-                        batch_size=batch_size,
-                        num_batches=(len(texts_to_encode) + batch_size - 1) // batch_size)
+                         total_texts=len(texts_to_encode),
+                         batch_size=batch_size,
+                         num_batches=(len(texts_to_encode) + batch_size - 1) // batch_size)
 
             for i in range(0, len(texts_to_encode), batch_size):
                 batch = texts_to_encode[i:i + batch_size]
@@ -181,39 +184,41 @@ class EmbeddingGenerator:
                         convert_to_numpy=True,
                         batch_size=len(batch)
                     )
-                    all_embeddings.extend([emb.tolist() for emb in batch_embeddings])
+                    all_embeddings.extend([emb.tolist()
+                                          for emb in batch_embeddings])
 
                     if batch_num % 10 == 0:  # Log every 10 batches
                         logfire.info(f"Processed batch {batch_num}",
-                                    embeddings_so_far=len(all_embeddings))
+                                     embeddings_so_far=len(all_embeddings))
                 except Exception as batch_error:
                     logfire.error(f"Batch {batch_num} failed, falling back to one-by-one",
-                                error=str(batch_error),
-                                batch_size=len(batch))
+                                  error=str(batch_error),
+                                  batch_size=len(batch))
                     # Fallback: encode one by one for this batch
                     for text in batch:
                         try:
-                            embedding = self.model.encode(text, show_progress_bar=False, convert_to_numpy=True)
+                            embedding = self.model.encode(
+                                text, show_progress_bar=False, convert_to_numpy=True)
                             all_embeddings.append(embedding.tolist())
                         except Exception:
                             all_embeddings.append([0.0] * self.embedding_dim)
 
             logfire.info("Batch embedding completed",
-                        total_texts=len(texts_to_encode),
-                        total_embeddings=len(all_embeddings))
+                         total_texts=len(texts_to_encode),
+                         total_embeddings=len(all_embeddings))
 
             return all_embeddings
         except Exception as e:
             logfire.error("Embedding encoding failed completely",
-                        error=str(e),
-                        error_type=type(e).__name__,
-                        total_texts=len(safe_texts))
+                          error=str(e),
+                          error_type=type(e).__name__,
+                          total_texts=len(safe_texts))
             # Log samples for debugging
             for i, text in enumerate(safe_texts[:3]):
                 logfire.error(f"Sample text {i}",
-                            text_type=type(text).__name__,
-                            text_repr=repr(text)[:200],
-                            text_len=len(text) if isinstance(text, str) else 0)
+                              text_type=type(text).__name__,
+                              text_repr=repr(text)[:200],
+                              text_len=len(text) if isinstance(text, str) else 0)
             raise
 
 
@@ -367,7 +372,8 @@ class VectorStore:
             """
 
             # Convert query embedding to proper pgvector format
-            query_embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+            query_embedding_str = '[' + \
+                ','.join(map(str, query_embedding)) + ']'
             params = [query_embedding_str, threshold]
 
             if document_ids:
@@ -469,12 +475,12 @@ class ChunkEmbeddingPipeline:
         self.embedding_generator = EmbeddingGenerator(embedding_model)
         self.vector_store = VectorStore(db_params, table_name)
 
-    async def process_document(self, file_path: str, chunk_size: int = 512,
-                               similarity_threshold: float = 0.5,
-                               document_id: str = None, metadata: Dict = None,
-                               chunker_type: str = None) -> str:
+    async def ingest_document(self, file_path: str, chunk_size: int = 512,
+                              similarity_threshold: float = 0.5,
+                              document_id: str = None, metadata: Dict = None,
+                              chunker_type: str = None) -> str:
         """
-        Process a document: chunk using imported function, then embed and store.
+        Ingest a document: chunk using imported function, then embed and store.
 
         Args:
             file_path: Path to the document file
@@ -505,11 +511,12 @@ class ChunkEmbeddingPipeline:
             file_path=str(file_path),
             chunk_size=chunk_size,
             similarity_threshold=similarity_threshold,
-            embedding_model=None, # Default model
+            embedding_model=None,  # Default model
             chunker_type=chunker_type  # Strategy: "token", "recursive", or "semantic"
         )
 
-        print(f"Created {len(chunks)} chunks using processor pattern (Abstract Method + Factory)")
+        print(
+            f"Created {len(chunks)} chunks using processor pattern (Abstract Method + Factory)")
 
         # Prepare chunks for embedding - filter out chunks with invalid text
         valid_chunks = []
@@ -519,18 +526,19 @@ class ChunkEmbeddingPipeline:
             if chunk.text is None or (isinstance(chunk.text, str) and len(chunk.text.strip()) == 0):
                 invalid_chunks += 1
                 logfire.warn("Skipping chunk with None or empty text",
-                           chunk_info=str(chunk)[:100])
+                             chunk_info=str(chunk)[:100])
             else:
                 valid_chunks.append(chunk)
 
         if invalid_chunks > 0:
             logfire.warn("Filtered out invalid chunks during processing",
-                        total_chunks=len(chunks),
-                        invalid_chunks=invalid_chunks,
-                        valid_chunks=len(valid_chunks))
+                         total_chunks=len(chunks),
+                         invalid_chunks=invalid_chunks,
+                         valid_chunks=len(valid_chunks))
 
         if not valid_chunks:
-            raise ValueError(f"No valid chunks created from document {document_id}. All {len(chunks)} chunks had None or empty text.")
+            raise ValueError(
+                f"No valid chunks created from document {document_id}. All {len(chunks)} chunks had None or empty text.")
 
         # Initialize robust text cleaning pipeline
         text_cleaner = TextCleanerFactory.create_default_cleaner()
@@ -565,8 +573,8 @@ class ChunkEmbeddingPipeline:
                 chunk.text = text
 
         logfire.info("Extracted chunk texts for embedding",
-                    num_chunks=len(chunk_texts),
-                    sample_types=[type(t).__name__ for t in chunk_texts[:3]])
+                     num_chunks=len(chunk_texts),
+                     sample_types=[type(t).__name__ for t in chunk_texts[:3]])
 
         # Generate embeddings in batch
         print("Generating embeddings...")

@@ -1,16 +1,15 @@
 """
 Main FastAPI application for RAG (Retrieval-Augmented Generation) system.
-Integrates vector search, knowledge graphs, and LLM generation.
+Integrates vector search and LLM generation.
 
 This module serves as the entry point and orchestrator for the entire RAG pipeline.
 Core functionality is distributed across specialized modules:
-- config.py: Configuration and environment management
-- validators.py: Request validation and authentication
-- retrieval.py: Document search and graph enrichment
-- llm_operations.py: LLM-based response generation
-- extraction_flow.py: Entity extraction orchestration
-- api_routes.py: FastAPI endpoint definitions
-- utils.py: BM25 reranking and utilities
+- config/app_config.py: Configuration and environment management
+- api/validators.py:    Request validation and authentication
+- retrieval/search.py:  Document search (vector + BM25 rerank)
+- retrieval/llm_operations.py: LLM-based response generation
+- api/routes/document_routes.py: FastAPI endpoint definitions
+- ingestion/chunking/chunker_factory.py: Chunking strategies
 """
 
 from typing import Optional
@@ -24,10 +23,6 @@ from models.models import QueryRequest, UploadResponse, RAGResponse
 
 # Initialize FastAPI application
 app = FastAPI(title="pgvector RAG API", version="1.0.0")
-
-# Register graph routes
-from api.routes.graph_routes import router as graph_router
-app.include_router(graph_router)
 
 # Global configuration
 config = AppConfig()
@@ -54,6 +49,23 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
         await config.pipeline.vector_store._initialize_database()
     return config.pipeline
 
+
+# -----------------------------------------------
+# GRAPH ROUTES — currently disabled
+# The knowledge-graph feature (entity extraction,
+# relationship extraction, graph-enriched search)
+# is implemented but not active.
+#
+# To re-enable:
+#   1. Uncomment the two lines below
+#   2. Wire entity extraction back into upload_and_process()
+#      (see api/routes/document_routes.py)
+#   3. Wire graph enrichment back into perform_document_search()
+#      (see retrieval/search.py)
+#
+# from api.routes.graph_routes import router as graph_router
+# app.include_router(graph_router)
+# -----------------------------------------------
 
 # Import route handlers from api_routes module
 from api.routes.document_routes import (

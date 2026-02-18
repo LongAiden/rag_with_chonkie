@@ -15,7 +15,6 @@ from api.config import DEFAULT_TABLE_NAME, DEFAULT_CHUNKING_SIMILARITY
 from api.validators import (
     validate_upload_params,
     require_access_password,
-    celery_enabled,
     celery_upload_enabled
 )
 from retrieval.search import perform_document_search
@@ -135,16 +134,16 @@ async def upload_and_process(
                 )
 
         with logfire.span("document_insertion",
+                          document_id=document_id,
+                          filename=file.filename,
+                          chunk_size=chunk_size,
+                          table_name=table_name):
+            logfire.info("Starting document processing",
                          document_id=document_id,
                          filename=file.filename,
-                         chunk_size=chunk_size,
-                         table_name=table_name):
-            logfire.info("Starting document processing",
-                        document_id=document_id,
-                        filename=file.filename,
-                        file_size=validation_result.file_size)
+                         file_size=validation_result.file_size)
 
-            processed_id = await pipeline.process_document(
+            processed_id = await pipeline.ingest_document(
                 file_path=str(temp_path),
                 chunk_size=chunk_size,
                 similarity_threshold=DEFAULT_CHUNKING_SIMILARITY,
@@ -159,89 +158,20 @@ async def upload_and_process(
             )
 
             logfire.info("Document processing completed successfully",
-                        document_id=processed_id,
-                        filename=file.filename)
-
-            # Step: Extract entities and relationships from chunks
-            # Lazy import to avoid circular dependency
-            from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
-
-            extraction_summary = {
-                "status": None,
-                "task_id": None,
-                "entities_extracted": 0,
-                "relationships_extracted": 0,
-            }
-
-            if celery_enabled():
-                try:
-                    from worker.celery_app import celery_app
-
-                    async_task = celery_app.send_task(
-                        "worker.tasks.run_entity_extraction",
-                        args=[processed_id, table_name]
-                    )
-                    extraction_summary.update(
-                        status="queued",
-                        task_id=async_task.id,
-                    )
-                    logfire.info(
-                        "Entity extraction queued for Celery worker",
-                        document_id=processed_id,
-                        filename=file.filename,
-                        task_id=async_task.id,
-                        table_name=table_name,
-                    )
-                except Exception as celery_error:
-                    logfire.warning(
-                        "Celery dispatch failed, running extraction inline",
-                        document_id=processed_id,
-                        filename=file.filename,
-                        error=str(celery_error),
-                        table_name=table_name,
-                    )
-                    extraction_summary = await run_entity_extraction_for_document(
-                        document_id=processed_id,
-                        filename=file.filename,
-                        table_name=table_name,
-                        config=config
-                    )
-            else:
-                extraction_summary = await run_entity_extraction_for_document(
-                    document_id=processed_id,
-                    filename=file.filename,
-                    table_name=table_name,
-                    config=config
-                )
-
-        entities_extracted = extraction_summary.get("entities_extracted", 0)
-        relationships_extracted = extraction_summary.get("relationships_extracted", 0)
-        extraction_status = extraction_summary.get("status")
-
-        if extraction_status == "queued":
-            extraction_note = f"Entity extraction queued (task {extraction_summary.get('task_id')})."
-        elif extraction_status == "disabled":
-            extraction_note = "Entity extraction disabled by configuration."
-        elif extraction_status == "error":
-            extraction_note = f"Entity extraction failed: {extraction_summary.get('error', 'unknown error')}."
-        else:
-            extraction_note = f"Extracted {entities_extracted} entities and {relationships_extracted} relationships."
+                         document_id=processed_id,
+                         filename=file.filename)
 
         logfire.info("Upload and processing pipeline completed",
-                   document_id=processed_id,
-                   filename=file.filename,
-                   entities_extracted=entities_extracted,
-                   relationships_extracted=relationships_extracted,
-                   status=extraction_status or "success",
-                   task_id=extraction_summary.get("task_id"))
+                     document_id=processed_id,
+                     filename=file.filename)
 
         return UploadResponse(
             status="success",
             document_id=processed_id,
             filename=file.filename,
-            message=f"Document processed successfully. {extraction_note}",
+            message="Document processed successfully.",
             chunks_created=None,
-            task_id=extraction_summary.get("task_id")
+            task_id=None
         )
 
     except HTTPException:
@@ -378,7 +308,8 @@ async def get_database_stats(get_pipeline=None):
 
             table_names = [row['table_name'] for row in tables]
 
-            print(f"\n📊 Found chunk tables: {', '.join(table_names) if table_names else 'none'}")
+            print(
+                f"\n📊 Found chunk tables: {', '.join(table_names) if table_names else 'none'}")
 
             if not table_names:
                 # No chunk tables found, use default
@@ -407,7 +338,8 @@ async def get_database_stats(get_pipeline=None):
                     total_chunks += result['chunks'] or 0
                     total_text_length += result['total_length'] or 0
 
-                    print(f"  {table_name}: {result['docs']} docs, {result['chunks']} chunks")
+                    print(
+                        f"  {table_name}: {result['docs']} docs, {result['chunks']} chunks")
 
                     if result['earliest'] and (earliest is None or result['earliest'] < earliest):
                         earliest = result['earliest']
@@ -423,7 +355,8 @@ async def get_database_stats(get_pipeline=None):
                 }
 
                 table_display = f"ALL TABLES ({len(table_names)} tables)"
-                print(f"📊 TOTAL: {total_docs} documents, {total_chunks} chunks\n")
+                print(
+                    f"📊 TOTAL: {total_docs} documents, {total_chunks} chunks\n")
 
             # Use template with substitutions
             return STATS_PAGE_HTML.format(
@@ -434,8 +367,10 @@ async def get_database_stats(get_pipeline=None):
                 embedding_model=pipeline.embedding_generator.model_name,
                 embedding_dim=pipeline.embedding_generator.embedding_dim,
                 table_name=table_display,
-                earliest_chunk=str(stats['earliest_chunk']) if stats['earliest_chunk'] else 'No documents yet',
-                latest_chunk=str(stats['latest_chunk']) if stats['latest_chunk'] else 'No documents yet'
+                earliest_chunk=str(
+                    stats['earliest_chunk']) if stats['earliest_chunk'] else 'No documents yet',
+                latest_chunk=str(
+                    stats['latest_chunk']) if stats['latest_chunk'] else 'No documents yet'
             )
 
         finally:
@@ -529,16 +464,17 @@ async def delete_table(table_name: str, config=None, get_pipeline=None):
                 """, table_name)
 
                 table_exists = result['table_exists']
-                row_count = result['estimated_rows']  # Approximate count (much faster)
+                # Approximate count (much faster)
+                row_count = result['estimated_rows']
 
                 logfire.info("Table existence check completed",
-                            table_exists=table_exists,
-                            estimated_rows=row_count)
+                             table_exists=table_exists,
+                             estimated_rows=row_count)
 
             if not table_exists:
                 await conn.close()
                 logfire.warn("Table deletion failed - table does not exist",
-                            table_name=table_name)
+                             table_name=table_name)
                 raise HTTPException(
                     status_code=404,
                     detail=f"Table '{table_name}' does not exist"
@@ -549,14 +485,14 @@ async def delete_table(table_name: str, config=None, get_pipeline=None):
                 # Step 1: Instant data removal (no WAL overhead)
                 await conn.execute(f"TRUNCATE TABLE {table_name} CASCADE;")
                 logfire.info("Table data truncated successfully",
-                            table_name=table_name,
-                            rows_deleted=row_count)
+                             table_name=table_name,
+                             rows_deleted=row_count)
 
             with logfire.span("table_schema_deletion"):
                 # Step 2: Clean schema removal
                 await conn.execute(f"DROP TABLE {table_name} CASCADE;")
                 logfire.info("Table schema dropped successfully",
-                            table_name=table_name)
+                             table_name=table_name)
 
             await conn.close()
 
@@ -564,11 +500,11 @@ async def delete_table(table_name: str, config=None, get_pipeline=None):
             if table_name == pipeline_instance.vector_store.table_name:
                 config.pipeline = None
                 logfire.info("Pipeline reset due to current table deletion",
-                            table_name=table_name)
+                             table_name=table_name)
 
             logfire.info("Table deletion completed successfully",
-                        table_name=table_name,
-                        estimated_rows_deleted=row_count)
+                         table_name=table_name,
+                         estimated_rows_deleted=row_count)
 
             return {
                 "status": "success",
@@ -582,9 +518,9 @@ async def delete_table(table_name: str, config=None, get_pipeline=None):
             raise  # Re-raise HTTP exceptions
         except Exception as e:
             logfire.error("Table deletion failed with unexpected error",
-                         table_name=table_name,
-                         error=str(e),
-                         error_type=type(e).__name__)
+                          table_name=table_name,
+                          error=str(e),
+                          error_type=type(e).__name__)
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to delete table '{table_name}': {str(e)}"
