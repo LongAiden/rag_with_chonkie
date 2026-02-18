@@ -1,5 +1,5 @@
 """
-Configuration module for RAG + Knowledge Graph.
+Configuration module for the RAG application.
 """
 
 from .graph_config import (
@@ -10,6 +10,16 @@ from .graph_config import (
     is_relationship_type_enabled,
     get_extraction_config,
 )
+from .app_config import (
+    AppConfig,
+    AppSettings,
+    DatabaseConfig,
+    DEFAULT_TABLE_NAME,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_CHUNKING_SIMILARITY,
+    ALLOWED_CONTENT_TYPES,
+    get_gemini_model,
+)
 
 __all__ = [
     "GraphConfig",
@@ -18,4 +28,12 @@ __all__ = [
     "is_entity_type_enabled",
     "is_relationship_type_enabled",
     "get_extraction_config",
+    "AppConfig",
+    "AppSettings",
+    "DatabaseConfig",
+    "DEFAULT_TABLE_NAME",
+    "DEFAULT_EMBEDDING_MODEL",
+    "DEFAULT_CHUNKING_SIMILARITY",
+    "ALLOWED_CONTENT_TYPES",
+    "get_gemini_model",
 ]

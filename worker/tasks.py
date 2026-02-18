@@ -12,30 +12,6 @@ from pathlib import Path
 from worker.celery_app import celery_app
 
 
-async def _run_entity_extraction(document_id: str, table_name: str) -> Dict[str, Any]:
-    # Import inside the task to avoid loading FastAPI app when the worker starts.
-    from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
-    from api.app import config
-
-    return await run_entity_extraction_for_document(
-        document_id=document_id,
-        filename=None,
-        table_name=table_name,
-        config=config
-    )
-
-
-@celery_app.task(name="worker.tasks.run_entity_extraction")
-def run_entity_extraction_task(
-    document_id: str, table_name: str | None = None
-) -> Dict[str, Any]:
-    """
-    Extract graph entities/relationships for a document asynchronously.
-    """
-    target_table = table_name or os.getenv(
-        "DEFAULT_TABLE_NAME", "document_chunks")
-    return asyncio.run(_run_entity_extraction(document_id, target_table))
-
 
 async def _process_upload(
     temp_path: str,
@@ -55,7 +31,6 @@ async def _process_upload(
     from api.app import config, get_pipeline
     from api.validators import validate_upload_params
     from api.config import DEFAULT_CHUNKING_SIMILARITY
-    from ingestion.extraction.extraction_flow import run_entity_extraction_for_document
 
     validate_upload_params(chunk_size, content_type)
     validation_result = config.file_validator.validate_file(temp_path)
@@ -80,12 +55,6 @@ async def _process_upload(
         },
     )
 
-    extraction_summary = await run_entity_extraction_for_document(
-        document_id=processed_id,
-        filename=filename,
-        table_name=table_name,
-    )
-
     # Cleanup temp file
     try:
         Path(temp_path).unlink(missing_ok=True)
@@ -93,12 +62,10 @@ async def _process_upload(
         pass
 
     return {
-        "status": extraction_summary.get("status", "completed"),
+        "status": "completed",
         "document_id": processed_id,
-        "entities_extracted": extraction_summary.get("entities_extracted", 0),
-        "relationships_extracted": extraction_summary.get("relationships_extracted", 0),
         "task_id": None,
-        "detail": "Upload and extraction completed",
+        "detail": "Upload completed",
     }
 
 
