@@ -301,6 +301,11 @@ docker build -f deployment/Dockerfile.base -t rag-base:latest .
 docker compose up --build
 ```
 
+**Commands
+```bash
+docker exec rag_postgres psql -U admin -d rag_db -c "\dt"
+docker exec -it rag_redis redis-cli
+```
 ---
 
 ## Known Issue - Gemini `additionalProperties` Warning

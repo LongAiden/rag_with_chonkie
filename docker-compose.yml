@@ -135,6 +135,11 @@ services:
   # Celery Worker (reuses app image - no rebuild needed)
   # ============================================
   celery_worker:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+      cache_from:
+        - rag_with_llama:latest
     image: rag_with_llama:latest
     container_name: rag_celery_worker
     command: celery -A worker.celery_app worker --loglevel=info

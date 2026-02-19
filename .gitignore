@@ -39,4 +39,5 @@ htmlcov/
 
 
 # Cursor rules
-.cursorrules
+*.cursorrules
+*.md
