@@ -586,6 +586,7 @@ class ChunkEmbeddingPipeline:
 
             # Assign page numbers, add section hierarchy prefix, and cache page content
             page_content_cache: Dict[int, str] = {}
+            last_section_prefix = ""
             for chunk in chunks:
                 if hasattr(chunk, 'start_index') and chunk.start_index is not None:
                     segment = markdown[:chunk.start_index]
@@ -593,11 +594,19 @@ class ChunkEmbeddingPipeline:
                     chunk.page_number = int(page_matches[-1].group(1)) if page_matches else 1
 
                     # Prepend section hierarchy: "[H1].[H2] - chunk text"
+                    # Fall back to the previous chunk's section if this chunk has none
                     section_prefix = _extract_section_hierarchy(markdown, chunk.start_index)
+                    if not section_prefix:
+                        section_prefix = last_section_prefix
+                    else:
+                        last_section_prefix = section_prefix
+
                     if section_prefix:
                         chunk.text = f"{section_prefix} - {chunk.text}"
                 else:
                     chunk.page_number = 1
+                    if last_section_prefix:
+                        chunk.text = f"{last_section_prefix} - {chunk.text}"
 
                 # Cache full page content (extracted once per unique page)
                 pg = chunk.page_number
