@@ -102,17 +102,30 @@ async def perform_document_search(
                 table_used=table_name
             )
 
-        # Step 2: Build context from retrieved chunks with page numbers
+        # Step 2: Build context from retrieved chunks with page numbers and full page content
         with logfire.span("context_building"):
             context_parts = []
             for i, result in enumerate(results):
                 page_info = ""
                 if result.get('metadata') and result['metadata'].get('page_number'):
                     page_info = f" (Page {result['metadata']['page_number']})"
-                context_parts.append(
-                    f"[Source {i+1}{page_info}]: {result['text']}")
 
-            context = "\n\n".join(context_parts)
+                chunk_text = result['text']
+                page_content = (result.get('metadata') or {}).get('page_content', '')
+
+                # Include the full page context block only when it adds new information
+                if page_content and page_content.strip() != chunk_text.strip():
+                    source_block = (
+                        f"[Source {i+1}{page_info}]\n"
+                        f"[Matched chunk]: {chunk_text}\n"
+                        f"[Full page context]:\n{page_content}"
+                    )
+                else:
+                    source_block = f"[Source {i+1}{page_info}]: {chunk_text}"
+
+                context_parts.append(source_block)
+
+            context = "\n\n---\n\n".join(context_parts)
 
             logfire.info("Context built",
                         total_context_parts=len(context_parts),

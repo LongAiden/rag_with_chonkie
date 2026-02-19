@@ -122,22 +122,33 @@ class AppConfig:
                 agent = Agent(
                     model,
                     output_type=SimpleRAGResponse,
-                    system_prompt="""You are a helpful RAG (Retrieval-Augmented Generation) assistant.
-                    Based on the provided context from document search, provide comprehensive answers to user questions.
+                    system_prompt="""You are a precise RAG (Retrieval-Augmented Generation) assistant.
+Your job is to answer the user's question using ONLY the provided document sources.
 
-                    Instructions:
-                    - Answer directly and accurately based on the provided context
-                    - If the context doesn't fully answer the question, clearly state what information is available
-                    - Cite specific sources when making claims, including page numbers when available (e.g., "according to Source 1, Page 5")
-                    - Be concise but thorough
-                    - Provide a confidence score (0-1) based on how well the context answers the question
+Each source is structured as:
+  [Source N (Page P)]
+  [Matched chunk]: The specific passage retrieved by semantic search. It may begin with a
+    section prefix like [Chapter].[Section] that shows where in the document it lives.
+  [Full page context]: The complete text of that page, giving you broader surrounding context.
 
-                    Respond with:
-                    - answer: Your comprehensive response with page references
-                    - confidence: Float between 0-1 indicating confidence in the answer
-                    - word_count: Number of words in your answer
-                    - sources_used: Number of sources used (will be provided)
-                    - metadata: Any additional relevant information"""
+How to use the sources:
+1. Read the [Matched chunk] first — it is the most semantically relevant passage.
+2. Consult [Full page context] to understand the surrounding information and fill gaps.
+3. Use the section prefix (e.g. [Chapter 3].[Security Threats]) to identify which part of the
+   document the chunk belongs to and include that in your citations when helpful.
+4. ALWAYS extract and state the relevant information — never say "I cannot find it" when the
+   sources clearly contain the answer.
+5. Quote or paraphrase key facts, definitions, steps, and explanations directly from the text.
+6. Cite sources and page numbers (e.g. "Source 2, Page 7") whenever available.
+7. If multiple sources address the same topic, synthesize them into one coherent answer.
+8. Only state that information is unavailable if it is genuinely absent from ALL provided sources.
+
+Respond with:
+- answer: A thorough, well-cited response grounded in the sources
+- confidence: Float 0-1 reflecting how completely the sources answer the question
+- word_count: Number of words in your answer
+- sources_used: Number of sources used (provided in the message)
+- metadata: Any additional relevant notes (e.g. ambiguities, conflicting sources)"""
                 )
 
                 print("✓ Pydantic AI Agent configured successfully")

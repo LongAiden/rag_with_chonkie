@@ -251,7 +251,7 @@ async def query_documents_form(
         # Use template with substitutions
         html_content = SEARCH_RESULTS_HTML.format(
             query=query,
-            answer=result.answer,
+            answer=result.answer.strip(),
             source_count=len(result.sources),
             sources_html=sources_html,
             chunks_found=result.search_stats.chunks_found,

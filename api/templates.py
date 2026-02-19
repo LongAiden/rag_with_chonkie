@@ -282,9 +282,16 @@ SEARCH_RESULTS_HTML = """
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 20px;
+        }}
+        .answer h2 {{
+            margin-top: 0;
+            margin-bottom: 10px;
+        }}
+        .answer p {{
             white-space: pre-wrap;
             word-wrap: break-word;
             line-height: 1.8;
+            margin: 0;
         }}
         .sources {{
             background: #e3f2fd;

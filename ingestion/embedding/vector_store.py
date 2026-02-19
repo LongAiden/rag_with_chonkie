@@ -11,6 +11,58 @@ import asyncpg
 import logfire
 from pathlib import Path
 
+
+def _extract_section_hierarchy(markdown: str, position: int) -> str:
+    """
+    Extract the heading hierarchy (H1 > H2 > H3) at a given character position.
+
+    Returns a prefix like "[Chapter 1].[Section 2].[Subsection A]"
+    or empty string if no headings precede the position.
+    """
+    segment = markdown[:position]
+    heading_pattern = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
+
+    hierarchy: Dict[int, str] = {}
+    for match in heading_pattern.finditer(segment):
+        level = len(match.group(1))
+        title = match.group(2).strip()
+        # Remove inline markdown from heading titles (bold, italic, backticks)
+        title = re.sub(r'[*_`]', '', title).strip()
+        hierarchy[level] = title
+        # Clear any deeper levels — they're no longer in scope
+        for deeper in list(hierarchy.keys()):
+            if deeper > level:
+                del hierarchy[deeper]
+
+    if not hierarchy:
+        return ""
+
+    parts = [hierarchy[lvl] for lvl in sorted(hierarchy.keys())]
+    return "[" + "].[".join(parts) + "]"
+
+
+def _extract_page_content(markdown: str, page_number: int) -> str:
+    """
+    Extract the full text content of a specific page from markdown
+    that contains [Page N] markers produced by PDFToMarkdownConverter.
+    """
+    page_markers = list(re.finditer(r'\[Page (\d+)\]', markdown))
+    if not page_markers:
+        return ""
+
+    start_pos = None
+    end_pos = None
+    for i, marker in enumerate(page_markers):
+        if int(marker.group(1)) == page_number:
+            start_pos = marker.end()  # content starts right after the marker
+            end_pos = page_markers[i + 1].start() if i + 1 < len(page_markers) else len(markdown)
+            break
+
+    if start_pos is None:
+        return ""
+
+    return markdown[start_pos:end_pos].strip()
+
 # Disable tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -532,16 +584,28 @@ class ChunkEmbeddingPipeline:
                 similarity_threshold=similarity_threshold,
             )
 
-            # Assign page numbers by scanning back for [Page N] markers
+            # Assign page numbers, add section hierarchy prefix, and cache page content
+            page_content_cache: Dict[int, str] = {}
             for chunk in chunks:
-                if hasattr(chunk, 'start_index'):
+                if hasattr(chunk, 'start_index') and chunk.start_index is not None:
                     segment = markdown[:chunk.start_index]
-                    matches = list(re.finditer(r'\[Page (\d+)\]', segment))
-                    chunk.page_number = int(matches[-1].group(1)) if matches else 1
+                    page_matches = list(re.finditer(r'\[Page (\d+)\]', segment))
+                    chunk.page_number = int(page_matches[-1].group(1)) if page_matches else 1
+
+                    # Prepend section hierarchy: "[H1].[H2] - chunk text"
+                    section_prefix = _extract_section_hierarchy(markdown, chunk.start_index)
+                    if section_prefix:
+                        chunk.text = f"{section_prefix} - {chunk.text}"
                 else:
                     chunk.page_number = 1
 
+                # Cache full page content (extracted once per unique page)
+                pg = chunk.page_number
+                if pg not in page_content_cache:
+                    page_content_cache[pg] = _extract_page_content(markdown, pg)
+
         else:
+            page_content_cache: Dict[int, str] = {}
             # Non-PDF: DOCX, TXT - existing processor flow
             processor = get_processor_for_file(str(file_path))
             chunks = processor.process_document(
@@ -631,6 +695,7 @@ class ChunkEmbeddingPipeline:
                 'start_index': getattr(chunk, 'start_index', None),
                 'end_index': getattr(chunk, 'end_index', None),
                 'page_number': page_number,
+                'page_content': page_content_cache.get(page_number, ""),
                 'chunk_size': chunk_size,
                 'similarity_threshold': similarity_threshold,
                 'embedding_model': self.embedding_generator.model_name,
