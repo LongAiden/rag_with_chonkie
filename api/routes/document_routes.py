@@ -218,7 +218,7 @@ async def query_documents(
 async def query_documents_form(
     query: str = Form(...),
     limit: int = Form(5),
-    threshold: float = Form(0.7),
+    threshold: float = Form(0.3),
     table_name: str = Form(DEFAULT_TABLE_NAME),
     access_password: Optional[str] = Form(None),
     # Dependencies injected by main app

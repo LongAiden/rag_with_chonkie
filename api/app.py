@@ -94,6 +94,7 @@ async def upload_route(
     access_password: Optional[str] = Form(None),
     x_app_password: Optional[str] = Header(default=None),
 ):
+    table_name = table_name.strip() or DEFAULT_TABLE_NAME
     return await upload_and_process(
         file=file,
         chunk_size=chunk_size,
@@ -122,10 +123,11 @@ async def query_route(
 async def query_form_route(
     query: str = Form(...),
     limit: int = Form(5),
-    threshold: float = Form(0.7),
+    threshold: float = Form(0.3),
     table_name: str = Form(DEFAULT_TABLE_NAME),
     access_password: Optional[str] = Form(None),
 ):
+    table_name = table_name.strip() or DEFAULT_TABLE_NAME
     return await query_documents_form(
         query=query,
         limit=limit,

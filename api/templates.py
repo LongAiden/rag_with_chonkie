@@ -102,7 +102,7 @@ HOME_PAGE_HTML = """
             <br>
             <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
             <br>
-            <label>Table Name: <input type="text" name="table_name" value="document_chunks" placeholder="document_chunks"></label>
+            <label>Table Name: <input type="text" name="table_name" placeholder="document_chunks"></label>
             <br>
             <label>Chunk Size: <input type="number" name="chunk_size" value="512" min="128" max="2048"></label>
             <br>
@@ -118,10 +118,10 @@ HOME_PAGE_HTML = """
             <br>
             <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
             <br>
-            <label>Table Name: <input type="text" name="table_name" value="document_chunks" placeholder="document_chunks"></label>
+            <label>Table Name: <input type="text" name="table_name" placeholder="document_chunks"></label>
             <br>
             <label>Max Results: <input type="number" name="limit" value="5" min="1" max="100" style="width: 80px;"></label>
-            <label>Similarity Threshold: <input type="number" name="threshold" value="0.5" min="0.5" max="0.95" step="0.05" style="width: 80px;"></label>
+            <label>Similarity Threshold: <input type="number" name="threshold" placeholder="0.3" min="0.0" max="0.95" step="0.05" style="width: 80px;"></label>
             <br>
             <button type="submit">Search</button>
         </form>
