@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
         last_table_headers = None  # Carries headers across page boundaries
 
-        for page_num in range(min(10, len(doc))):
+        for page_num in range(len(doc)):
             try:
                 page_markdown, last_table_headers = process_page_to_markdown(
                     doc, page_num, last_table_headers
