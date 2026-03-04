@@ -210,18 +210,23 @@ def chunk_markdown(
             page_content_map[page_num] = markdown_text[start:end].strip()
 
         # Assign each chunk only the content of its own page (not the full document)
+        first_page = int(page_markers[0].group(1))
         for chunk in chunks:
-            start_idx = getattr(chunk, 'start_index', 0) or 0
-            chunk_page = 1
+            start_idx = getattr(chunk, 'start_index', None)
+            if start_idx is None:
+                start_idx = 0
+            chunk_page = first_page
             for marker in page_markers:
                 if marker.start() > start_idx:
                     break
                 chunk_page = int(marker.group(1))
             setattr(chunk, 'full_content', page_content_map.get(chunk_page, ''))
+            setattr(chunk, 'page', chunk_page)
     else:
         # No page markers (plain markdown / non-PDF): store the full text as fallback
         for chunk in chunks:
             setattr(chunk, 'full_content', markdown_text)
+            setattr(chunk, 'page', 'all')
 
     return chunks
 
