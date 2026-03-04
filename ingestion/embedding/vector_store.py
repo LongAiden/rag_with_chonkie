@@ -705,6 +705,7 @@ class ChunkEmbeddingPipeline:
                 'end_index': getattr(chunk, 'end_index', None),
                 'page_number': page_number,
                 'page_content': page_content_cache.get(page_number, ""),
+                'full_content': getattr(chunk, 'full_content', ''),
                 'chunk_size': chunk_size,
                 'similarity_threshold': similarity_threshold,
                 'embedding_model': self.embedding_generator.model_name,

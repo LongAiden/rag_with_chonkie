@@ -49,9 +49,29 @@ async def generate_llm_response(
                     "Pydantic AI Agent is not configured - missing GOOGLE_API_KEY or configuration failed"
                 )
 
-            # Use Pydantic AI Agent for structured response with proper user message
+            # Build deduplicated context from unique page/document contents.
+            # If 5 chunks belong to 3 pages, only 3 page contents are included.
+            seen_page_keys: dict = {}
+            for result in results:
+                meta = result.get('metadata') or {}
+                page_num = meta.get('page_number')
+                page_content = (meta.get('page_content') or '').strip()
+                full_content = (meta.get('full_content') or '').strip()
+
+                # Dedup key: page number for paged docs, document_id otherwise
+                page_key = page_num if page_num is not None else result.get('document_id', id(result))
+
+                if page_key not in seen_page_keys:
+                    content = page_content if page_content else full_content
+                    label = f"Page {page_num}" if page_num is not None else "Document"
+                    seen_page_keys[page_key] = f"[{label}]:\n{content}"
+
+            rich_context = "\n\n---\n\n".join(
+                part for part in seen_page_keys.values() if part.split('\n', 1)[-1].strip()
+            ) or context  # fallback to pre-built context if all contents are empty
+
             user_message = f"""Context from documents:
-{context}
+{rich_context}
 
 User Question: {query}
 

@@ -18,6 +18,7 @@ Adaptive Selection:
 from enum import Enum
 from typing import List, Optional
 import os
+import re
 import logfire
 
 
@@ -194,7 +195,35 @@ def chunk_markdown(
         embedding_model=embedding_model
     )
 
-    return chunker.chunk(markdown_text)
+    chunks = chunker.chunk(markdown_text)
+
+    # Build per-page content map from [Page N] markers (PDF-converted markdown)
+    page_markers = list(re.finditer(r'\[Page (\d+)\]', markdown_text))
+
+    if page_markers:
+        # Map each page number → its content slice
+        page_content_map: dict = {}
+        for i, marker in enumerate(page_markers):
+            page_num = int(marker.group(1))
+            start = marker.end()
+            end = page_markers[i + 1].start() if i + 1 < len(page_markers) else len(markdown_text)
+            page_content_map[page_num] = markdown_text[start:end].strip()
+
+        # Assign each chunk only the content of its own page (not the full document)
+        for chunk in chunks:
+            start_idx = getattr(chunk, 'start_index', 0) or 0
+            chunk_page = 1
+            for marker in page_markers:
+                if marker.start() > start_idx:
+                    break
+                chunk_page = int(marker.group(1))
+            setattr(chunk, 'full_content', page_content_map.get(chunk_page, ''))
+    else:
+        # No page markers (plain markdown / non-PDF): store the full text as fallback
+        for chunk in chunks:
+            setattr(chunk, 'full_content', markdown_text)
+
+    return chunks
 
 
 # Backward-compatible alias
