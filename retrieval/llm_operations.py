@@ -62,9 +62,7 @@ async def generate_llm_response(
 
                 if page_key in seen_pages:
                     continue
-
-                # full_content = per-page text set by chunker_factory (preferred)
-                # page_content = per-page text set by vector_store (fallback for older records)
+                
                 content = (meta.get('full_content') or '').strip()
     
                 label = f"Page {page_num}" if page_num is not None else "Document"
