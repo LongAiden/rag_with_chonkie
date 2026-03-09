@@ -155,9 +155,13 @@ async def supported_types_route():
 
 
 @app.delete("/table/{table_name}")
-async def delete_table_route(table_name: str):
+async def delete_table_route(
+    table_name: str,
+    x_app_password: Optional[str] = Header(default=None),
+):
     return await delete_table(
         table_name=table_name,
+        x_app_password=x_app_password,
         config=config,
         get_pipeline=get_pipeline
     )

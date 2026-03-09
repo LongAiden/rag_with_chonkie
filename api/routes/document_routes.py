@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from api.config import DEFAULT_TABLE_NAME, DEFAULT_CHUNKING_SIMILARITY
 from api.validators import (
     validate_upload_params,
+    validate_table_name,
     require_access_password,
     celery_upload_enabled
 )
@@ -437,8 +438,15 @@ async def get_supported_types(config=None):
 
 
 @router.delete("/table/{table_name}")
-async def delete_table(table_name: str, config=None, get_pipeline=None):
+async def delete_table(
+    table_name: str,
+    x_app_password: Optional[str] = Header(default=None),
+    config=None,
+    get_pipeline=None
+):
     """Delete a specific table from the database (optimized for speed)."""
+    require_access_password(x_app_password)
+    validate_table_name(table_name)
     with logfire.span("table_deletion", table_name=table_name):
         logfire.info("Starting table deletion", table_name=table_name)
 
