@@ -111,5 +111,8 @@ class SimpleRAGResponse(BaseModel):
         None, ge=0, le=1, description="Response confidence")
     word_count: int = Field(description="Number of words in response")
     sources_used: int = Field(description="Number of sources used")
+    input_tokens: Optional[int] = Field(None, description="Number of input tokens used")
+    output_tokens: Optional[int] = Field(None, description="Number of output tokens used")
+    total_tokens: Optional[int] = Field(None, description="Total tokens used")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata")

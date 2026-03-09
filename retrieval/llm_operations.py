@@ -84,15 +84,28 @@ Sources used: {sources_used}"""
 
             response = await agent.run(user_message)
 
+            # Extract token usage from pydantic-ai RunResult
+            usage = response.usage()
+            input_tokens = usage.request_tokens
+            output_tokens = usage.response_tokens
+            total_tokens = usage.total_tokens
+
             # The agent now returns a structured SimpleRAGResponse directly
             if hasattr(response, 'output') and isinstance(response.output, SimpleRAGResponse):
                 # Update sources_used if not set correctly by the model
                 if response.output.sources_used != sources_used:
                     response.output.sources_used = sources_used
 
+                response.output.input_tokens = input_tokens
+                response.output.output_tokens = output_tokens
+                response.output.total_tokens = total_tokens
+
                 logfire.info("LLM response generated successfully",
                             word_count=response.output.word_count,
                             confidence=response.output.confidence,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            total_tokens=total_tokens,
                             method="pydantic_ai_agent")
 
                 return response.output
