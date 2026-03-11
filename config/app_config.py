@@ -73,6 +73,9 @@ class AppSettings(BaseSettings):
     google_api_key: Optional[str] = Field(default=None, validation_alias='GOOGLE_API_KEY')
     gemini_model: str = Field(default='gemini-2.5-flash', validation_alias='GEMINI_MODEL')
 
+    # PDF parsing backend: "ollama" (PyMuPDF + Ollama VLM) or "gemini-docling" (Docling + Gemini)
+    pdf_parser_backend: str = Field(default='ollama', validation_alias='PDF_PARSER_BACKEND')
+
     # Embedding
     embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL)
 
