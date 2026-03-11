@@ -10,10 +10,9 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 import logfire
-import google.generativeai as genai
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.models.openai import OpenAIModel
 
 from ingestion.validation.file_validator import FileValidator, FileValidationConfig
 from models.models import SimpleRAGResponse
@@ -66,7 +65,11 @@ class AppSettings(BaseSettings):
     # Logfire
     logfire_write_token: Optional[str] = Field(default=None, validation_alias='LOGFIRE_WRITE_TOKEN')
 
-    # Gemini/Google AI
+    # Ollama
+    ollama_base_url: str = Field(default='http://localhost:11434', validation_alias='OLLAMA_BASE_URL')
+    ollama_model: str = Field(default='deepseek-r1:8b', validation_alias='OLLAMA_MODEL')
+
+    # Gemini/Google AI (kept for backward compatibility)
     google_api_key: Optional[str] = Field(default=None, validation_alias='GOOGLE_API_KEY')
     gemini_model: str = Field(default='gemini-2.5-flash', validation_alias='GEMINI_MODEL')
 
@@ -111,18 +114,18 @@ class AppConfig:
             logfire.configure()
 
     def _configure_pydantic_ai(self) -> Optional[Agent]:
-        """Configure Pydantic AI Agent with Google Gemini."""
-        if self.settings.google_api_key:
-            try:
-                # Configure Pydantic AI Agent with GoogleProvider
-                provider = GoogleProvider(api_key=self.settings.google_api_key)
-                model = GoogleModel(self.settings.gemini_model, provider=provider)
+        """Configure Pydantic AI Agent with Ollama via OpenAI-compatible endpoint."""
+        try:
+            client = AsyncOpenAI(
+                base_url=f"{self.settings.ollama_base_url}/v1",
+                api_key="ollama",
+            )
+            model = OpenAIModel(self.settings.ollama_model, openai_client=client)
 
-                # Create agent with system prompt and output type
-                agent = Agent(
-                    model,
-                    output_type=SimpleRAGResponse,
-                    system_prompt="""You are a precise RAG (Retrieval-Augmented Generation) assistant.
+            agent = Agent(
+                model,
+                output_type=SimpleRAGResponse,
+                system_prompt="""You are a precise RAG (Retrieval-Augmented Generation) assistant.
 Your job is to answer the user's question using ONLY the provided document sources.
 
 Each source is structured as:
@@ -149,22 +152,16 @@ Respond with:
 - word_count: Number of words in your answer
 - sources_used: Number of sources used (provided in the message)
 - metadata: Any additional relevant notes (e.g. ambiguities, conflicting sources)"""
-                )
+            )
 
-                print("✓ Pydantic AI Agent configured successfully")
-                return agent
-            except Exception as e:
-                print(f"❌ Pydantic AI configuration failed: {e}")
-                # Fallback to direct genai for backward compatibility
-                try:
-                    genai.configure(api_key=self.settings.google_api_key)
-                    print("✓ Fallback to direct Gemini API")
-                except Exception as fallback_error:
-                    print(f"❌ Gemini fallback also failed: {fallback_error}")
+            print("✓ Pydantic AI Agent configured successfully (Ollama)")
+            return agent
+        except Exception as e:
+            print(f"❌ Pydantic AI configuration failed: {e}")
         return None
 
 
-def get_gemini_model() -> str:
-    """Get the configured Gemini model name."""
+def get_ollama_model() -> str:
+    """Get the configured Ollama model name."""
     settings = AppSettings()
-    return settings.gemini_model
+    return settings.ollama_model

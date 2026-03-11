@@ -31,6 +31,25 @@ class GraphConfig(BaseSettings):
     )
 
     # ============================================
+    # Ollama Configuration
+    # ============================================
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        validation_alias="OLLAMA_BASE_URL",
+        description="Ollama API base URL"
+    )
+    ollama_model: str = Field(
+        default="deepseek-r1:8b",
+        validation_alias="OLLAMA_MODEL",
+        description="Ollama text model for entity/relationship extraction"
+    )
+    ollama_vlm_model: str = Field(
+        default="llama3.2-vision:11b",
+        validation_alias="OLLAMA_VLM_MODEL",
+        description="Ollama vision model for image content extraction"
+    )
+
+    # ============================================
     # API Retry & Timeout Configuration
     # ============================================
     gemini_request_timeout: float = Field(

@@ -81,6 +81,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-rag_db}
 
+      # Ollama (runs on Windows host, accessible via host.docker.internal)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-deepseek-r1:8b}
+      OLLAMA_VLM_MODEL: ${OLLAMA_VLM_MODEL:-llama3.2-vision:11b}
+
       # API Keys
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       LOGFIRE_WRITE_TOKEN: ${LOGFIRE_WRITE_TOKEN:-}
@@ -150,6 +155,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-rag_db}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-deepseek-r1:8b}
+      OLLAMA_VLM_MODEL: ${OLLAMA_VLM_MODEL:-llama3.2-vision:11b}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       ENABLE_ENTITY_EXTRACTION: ${ENABLE_ENTITY_EXTRACTION:-true}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}

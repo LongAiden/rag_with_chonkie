@@ -8,55 +8,20 @@ import json
 from typing import List, Dict, Any
 from uuid import UUID
 import asyncpg
-from google import generativeai as genai
 
 from .entity_types import RelationshipType, RELATIONSHIP_TYPE_DESCRIPTIONS
-from .retry_utils import retry_async_with_backoff
 from .json_utils import JSONParser
-from config.graph_config import get_graph_config
+from .llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
 
 
 class RelationshipExtractor:
-    """Extract relationships between entities using Gemini."""
+    """Extract relationships between entities using an LLM provider."""
 
-    def __init__(self, db_pool: asyncpg.Pool, gemini_api_key: str, gemini_model: str):
+    def __init__(self, db_pool: asyncpg.Pool, llm_provider: LLMProvider):
         self.db_pool = db_pool
-        self.gemini_api_key = gemini_api_key
-        genai.configure(api_key=gemini_api_key)
-        self.gemini_model = gemini_model or "gemini-2.5-flash"
-        self.model = genai.GenerativeModel(self.gemini_model)
-
-        # Load retry configuration
-        config = get_graph_config()
-        self.max_retries = config.gemini_max_retries
-        self.retry_initial_delay = config.gemini_retry_initial_delay
-        self.retry_max_delay = config.gemini_retry_max_delay
-        self.retry_exponential_base = config.gemini_retry_exponential_base
-        self.rate_limit_pause = config.gemini_rate_limit_pause
-
-    async def _call_gemini_with_retry(self, prompt: str) -> Any:
-        """
-        Call Gemini API with retry logic and exponential backoff.
-
-        Args:
-            prompt: The prompt to send to Gemini
-
-        Returns:
-            Gemini response object
-        """
-        @retry_async_with_backoff(
-            max_retries=self.max_retries,
-            initial_delay=self.retry_initial_delay,
-            max_delay=self.retry_max_delay,
-            exponential_base=self.retry_exponential_base,
-            rate_limit_pause=self.rate_limit_pause
-        )
-        async def _call():
-            return await self.model.generate_content_async(prompt)
-
-        return await _call()
+        self.llm_provider = llm_provider
 
     async def extract_relationships_from_chunk(
         self,
@@ -85,9 +50,8 @@ class RelationshipExtractor:
         prompt = self._create_extraction_prompt(chunk_text, entities)
 
         try:
-            # Call Gemini to extract relationships
-            response = await self._call_gemini_with_retry(prompt)
-            relationships_text = response.text
+            response = await self.llm_provider.generate_content(prompt)
+            relationships_text = self.llm_provider.extract_text_from_response(response)
 
             # Parse the response
             relationships = self._parse_relationships(
@@ -155,13 +119,12 @@ class RelationshipExtractor:
         prompt = self._create_batch_extraction_prompt(valid_payloads)
 
         try:
-            # Call Gemini once for all chunks
             with logfire.span("batch_relationship_extraction",
                             num_chunks=len(valid_payloads)):
-                response = await self._call_gemini_with_retry(prompt)
-                batch_text = response.text
+                response = await self.llm_provider.generate_content(prompt)
+                batch_text = self.llm_provider.extract_text_from_response(response)
 
-                logfire.info("Gemini response received",
+                logfire.info("LLM response received",
                            response_length=len(batch_text),
                            num_chunks=len(valid_payloads))
 

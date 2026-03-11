@@ -21,7 +21,7 @@ from sentence_transformers import SentenceTransformer
 from config.graph_config import get_graph_config
 from graph_processing.entity_extraction import EntityExtractor, EntityExtractionError
 from graph_processing.relationship_extraction import RelationshipExtractor
-from graph_processing.gemini_provider import GeminiLLMProvider
+from graph_processing.ollama_provider import OllamaLLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +39,7 @@ class ExtractionService:
     def __init__(
         self,
         pool: asyncpg.Pool,
-        gemini_api_key: str,
-        gemini_model: str,
+        llm_provider: OllamaLLMProvider,
         embedding_model: SentenceTransformer,
         entity_threshold: float = 0.6,
         relationship_threshold: float = 0.6,
@@ -49,29 +48,10 @@ class ExtractionService:
         max_concurrent_calls: int = DEFAULT_MAX_CONCURRENT_CALLS,
         inter_batch_delay: float = DEFAULT_INTER_BATCH_DELAY
     ):
-        """
-        Initialize extraction service.
-
-        Args:
-            pool: Database connection pool
-            gemini_api_key: Google Gemini API key for LLM
-            gemini_model: Gemini model name
-            embedding_model: SentenceTransformer model for embeddings
-            entity_threshold: Minimum confidence for entity extraction
-            relationship_threshold: Minimum confidence for relationship extraction
-            table_name: Name of the chunks table (default: document_chunks)
-            batch_size: Number of chunks per batch (default: 10)
-            max_concurrent_calls: Maximum concurrent API calls (default: 2)
-            inter_batch_delay: Delay between batches in seconds (default: 1.0)
-        """
         self.pool = pool
-        
-        # Create LLM provider
-        llm_provider = GeminiLLMProvider(api_key=gemini_api_key, model_name=gemini_model)
-        
-        # Initialize extractors with the provider
+
         self.entity_extractor = EntityExtractor(pool, llm_provider, embedding_model)
-        self.rel_extractor = RelationshipExtractor(pool, gemini_api_key, gemini_model)
+        self.rel_extractor = RelationshipExtractor(pool, llm_provider)
         self.entity_threshold = entity_threshold
         self.relationship_threshold = relationship_threshold
         self.table_name = table_name
@@ -433,26 +413,22 @@ async def create_extraction_service(
     """
     config = get_graph_config()
 
-    gemini_api_key = config.gemini_api_key or os.getenv("GOOGLE_API_KEY")
-    if not gemini_api_key:
-        raise ValueError("GOOGLE_API_KEY not found in environment variables")
+    llm_provider = OllamaLLMProvider(
+        base_url=config.ollama_base_url,
+        model_name=config.ollama_model,
+    )
 
-    gemini_model = config.gemini_model
     entity_threshold = entity_threshold or config.entity_confidence_threshold
     relationship_threshold = relationship_threshold or config.relationship_confidence_threshold
     batch_size = config.batch_size
-
-    # Get concurrency settings from config
     max_concurrent = max_concurrent_calls or config.max_concurrent_api_calls
     batch_delay = inter_batch_delay if inter_batch_delay is not None else config.inter_batch_delay
 
-    embedding_model_name = config.entity_embedding_model
-    embedding_model = SentenceTransformer(embedding_model_name)
+    embedding_model = SentenceTransformer(config.entity_embedding_model)
 
     return ExtractionService(
         pool=pool,
-        gemini_api_key=gemini_api_key,
-        gemini_model=gemini_model,
+        llm_provider=llm_provider,
         embedding_model=embedding_model,
         entity_threshold=entity_threshold,
         relationship_threshold=relationship_threshold,

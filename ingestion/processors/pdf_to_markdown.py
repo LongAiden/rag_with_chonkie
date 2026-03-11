@@ -4,6 +4,8 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ingestion.processors.vlm_extractor import OllamaVLMExtractor
+
 
 @dataclass
 class ConversionOptions:
@@ -33,6 +35,9 @@ class ConversionOptions:
 
     # Custom handlers (extensibility point)
     custom_block_handler: Optional[callable] = None
+
+    # VLM image extractor (optional — falls back to image_placeholder when None)
+    vlm_extractor: Optional[OllamaVLMExtractor] = None
 
 
 class PDFToMarkdownConverter:
@@ -324,7 +329,7 @@ class PDFToMarkdownConverter:
         if block["type"] == 0:  # Text block
             return self._process_text_block(block, block_rect, options)
         elif block["type"] == 1:  # Image block
-            return self._process_image_block(block_rect, options)
+            return self._process_image_block(block, block_rect, options)
 
         return None
 
@@ -372,25 +377,28 @@ class PDFToMarkdownConverter:
 
     def _process_image_block(
         self,
+        block: Dict,
         block_rect: fitz.Rect,
         options: ConversionOptions
     ) -> Optional[Dict]:
         """
-        Process image block.
-
-        HIDDEN: Image extraction strategy, placeholder formatting.
-
-        Future extension point: Could extract actual images, save to disk,
-        generate references, etc. - all without changing interface.
+        Process image block. Uses VLM to describe image content when vlm_extractor
+        is configured; falls back to image_placeholder otherwise.
         """
         if not options.extract_images:
             return None
+
+        content = options.image_placeholder
+        if options.vlm_extractor is not None:
+            image_bytes = block.get("image")
+            if image_bytes:
+                content = options.vlm_extractor.describe_image(image_bytes)
 
         return {
             "y0": block_rect.y0,
             "x0": block_rect.x0,
             "type": "image",
-            "content": options.image_placeholder
+            "content": content
         }
 
     def _process_table(self, table: Any, options: ConversionOptions) -> Optional[Dict]:
