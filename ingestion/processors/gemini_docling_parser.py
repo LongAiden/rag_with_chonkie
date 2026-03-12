@@ -170,6 +170,9 @@ class GeminiDoclingParser(PDFParserBase):
         images_scale: float = _DEFAULT_IMAGES_SCALE,
         complex_table_rows: int = _DEFAULT_COMPLEX_TABLE_ROWS,
         complex_table_cols: int = _DEFAULT_COMPLEX_TABLE_COLS,
+        h1_min_height: float = 20.0,
+        h2_min_height: float = 11.0,
+        h3_min_height: float = 9.0,
     ):
         self._api_key = api_key
         self._gemini_model = gemini_model
@@ -177,6 +180,9 @@ class GeminiDoclingParser(PDFParserBase):
         self._images_scale = images_scale
         self._complex_table_rows = complex_table_rows
         self._complex_table_cols = complex_table_cols
+        self._h1_min_height = h1_min_height
+        self._h2_min_height = h2_min_height
+        self._h3_min_height = h3_min_height
         self._genai_model = None
         self._vlm_calls: int = 0
 
@@ -384,8 +390,24 @@ class GeminiDoclingParser(PDFParserBase):
                 md = f"<table>\n\n{md}\n\n</table>"
 
             elif isinstance(item, SectionHeaderItem):
-                level = "#" * min(max(item.level, 1), 6)
-                md = f"{level} {item.text}"
+                # Use bbox height as font-size proxy to assign heading level.
+                # Docling often flattens all headers to level=1; height is more reliable.
+                bbox_height = item.prov[0].bbox.t - item.prov[0].bbox.b
+                if bbox_height > self._h1_min_height:
+                    prefix = "#"
+                elif bbox_height > self._h2_min_height:
+                    prefix = "##"
+                elif bbox_height > self._h3_min_height:
+                    prefix = "###"
+                else:
+                    # Too small to be a heading — emit as body text to suppress
+                    # false positives (e.g. inline styled "Constant width" labels).
+                    md = (item.text or "").strip()
+                    if not md:
+                        continue
+                    ordered.append((y, x, md))
+                    continue
+                md = f"{prefix} {item.text}"
 
             elif isinstance(item, TextItem):
                 md = (item.text or "").strip()

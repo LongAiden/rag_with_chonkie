@@ -22,7 +22,7 @@ def create_pdf_parser(backend: str, settings: "AppSettings") -> PDFParserBase:
         from ingestion.processors.ollama_pdf_parser import OllamaPDFParser
         return OllamaPDFParser(
             ollama_base_url=settings.ollama_base_url,
-            ollama_model=settings.ollama_model,
+            vlm_model=settings.ollama_vlm_model,
         )
 
     if backend == "gemini-docling":

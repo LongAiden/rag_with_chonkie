@@ -68,12 +68,13 @@ class AppSettings(BaseSettings):
     # Ollama
     ollama_base_url: str = Field(default='http://localhost:11434', validation_alias='OLLAMA_BASE_URL')
     ollama_model: str = Field(default='deepseek-r1:8b', validation_alias='OLLAMA_MODEL')
+    ollama_vlm_model: str = Field(default='qwen3.5:9b', validation_alias='OLLAMA_VLM_MODEL')
 
     # Gemini/Google AI (kept for backward compatibility)
     google_api_key: Optional[str] = Field(default=None, validation_alias='GOOGLE_API_KEY')
     gemini_model: str = Field(default='gemini-2.5-flash', validation_alias='GEMINI_MODEL')
 
-    # PDF parsing backend: "ollama" (PyMuPDF + Ollama VLM) or "gemini-docling" (Docling + Gemini)
+    # PDF parsing backend: "ollama" (Docling + Ollama VLM) or "gemini-docling" (Docling + Gemini)
     pdf_parser_backend: str = Field(default='ollama', validation_alias='PDF_PARSER_BACKEND')
 
     # Embedding
