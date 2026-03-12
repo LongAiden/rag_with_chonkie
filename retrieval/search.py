@@ -18,7 +18,8 @@ async def perform_document_search(
     pipeline,
     config,
     document_ids: Optional[List[str]] = None,
-    table_name: str = "document_chunks"
+    table_name: str = "document_chunks",
+    model: str = "gemini-2.5-flash"
 ) -> RAGResponse:
     """
     Common document search logic with optional reranking.
@@ -132,7 +133,7 @@ async def perform_document_search(
                         context_length=len(context))
 
         # Step 3: Generate response with LLM
-        llm_response = await generate_llm_response(query, context, results, config.agent)
+        llm_response = await generate_llm_response(query, context, results, config.agent, model=model)
 
         # Calculate search statistics
         avg_similarity = sum(r['similarity'] for r in results) / len(results)
@@ -161,6 +162,9 @@ async def perform_document_search(
                 confidence=llm_response.confidence,
                 reranking_enabled=reranking_enabled,
                 avg_rerank_score=round(avg_rerank_score, 3) if avg_rerank_score else None,
+                input_tokens=llm_response.input_tokens,
+                output_tokens=llm_response.output_tokens,
+                total_tokens=llm_response.total_tokens,
             ),
             table_used=table_name
         )

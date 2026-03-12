@@ -531,7 +531,8 @@ class ChunkEmbeddingPipeline:
     async def ingest_document(self, file_path: str, chunk_size: int = 512,
                               similarity_threshold: float = 0.5,
                               document_id: str = None, metadata: Dict = None,
-                              chunker_type: str = None) -> str:
+                              chunker_type: str = None,
+                              parse_backend: str = "") -> str:
         """
         Ingest a document: chunk using imported function, then embed and store.
 
@@ -567,8 +568,21 @@ class ChunkEmbeddingPipeline:
             markdown_dir.mkdir(parents=True, exist_ok=True)
             markdown_path = markdown_dir / file_path.with_suffix('.md').name
 
-            converter = PDFToMarkdownConverter()
-            markdown = converter.convert(str(file_path), output=str(markdown_path))
+            if parse_backend == "ollama":
+                from ingestion.processors.ollama_pdf_parser import OllamaPDFParser
+                parser = OllamaPDFParser(
+                    ollama_base_url="http://localhost:11434",
+                    ollama_model="qwen3.5:9b",
+                )
+                markdown = parser.parse_pdf(str(file_path), output_path=str(markdown_path))
+            elif parse_backend == "gemini-docling":
+                from ingestion.processors.pdf_parser_factory import create_pdf_parser
+                from config.app_config import AppSettings
+                parser = create_pdf_parser("gemini-docling", AppSettings())
+                markdown = parser.parse_pdf(str(file_path), output_path=str(markdown_path))
+            else:
+                converter = PDFToMarkdownConverter()
+                markdown = converter.convert(str(file_path), output=str(markdown_path))
 
             logfire.info("PDF converted to Markdown",
                          source=str(file_path),

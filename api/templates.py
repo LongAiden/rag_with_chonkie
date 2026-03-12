@@ -86,6 +86,43 @@ HOME_PAGE_HTML = """
             font-size: 18px;
             line-height: 1;
         }
+
+        /* Tab styles */
+        .tab-bar {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 0;
+        }
+        .tab-btn {
+            padding: 12px 28px;
+            border: none;
+            border-radius: 10px 10px 0 0;
+            background: #dee2e6;
+            color: #495057;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 15px;
+            transition: background 0.2s, color 0.2s;
+        }
+        .tab-btn.active {
+            background: white;
+            color: #007bff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .model-select {
+            margin: 10px 0;
+            padding: 10px 12px;
+            width: 100%;
+            box-sizing: border-box;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        .model-select:focus { outline: none; border-color: #007bff; }
     </style>
 </head>
 <body>
@@ -94,26 +131,21 @@ HOME_PAGE_HTML = """
         <strong>Powered by:</strong> PostgreSQL + pgvector for high-performance similarity search
     </div>
 
-    <div class="section">
-        <h2>📤 Upload & Process Document</h2>
-        <p>Supported formats: PDF, DOCX, TXT. Documents are chunked semantically and stored with vector embeddings.</p>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".pdf,.docx,.txt" required>
-            <br>
-            <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
-            <br>
-            <label>Table Name: <input type="text" name="table_name" placeholder="document_chunks"></label>
-            <br>
-            <label>Chunk Size: <input type="number" name="chunk_size" value="512" min="128" max="2048"></label>
-            <br>
-            <button type="submit">Upload & Process</button>
-        </form>
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('chat', this)">💬 Chat</button>
+        <button class="tab-btn" onclick="switchTab('embed', this)">📤 Embed</button>
     </div>
 
-    <div class="section">
+    <div id="tab-chat" class="tab-panel active section">
         <h2>🔍 Query Documents</h2>
         <p>Semantic search powered by sentence embeddings and pgvector cosine similarity.</p>
+        <label>Model:</label>
+        <select id="model-select" class="model-select" onchange="document.getElementById('model-hidden').value=this.value">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="deepseek-r1:8b">DeepSeek R1 8B (Ollama)</option>
+        </select>
         <form action="/query-form" method="post">
+            <input type="hidden" name="model" id="model-hidden" value="gemini-2.5-flash">
             <textarea name="query" placeholder="Ask a question about your documents..." required rows="3"></textarea>
             <br>
             <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
@@ -125,12 +157,33 @@ HOME_PAGE_HTML = """
             <br>
             <button type="submit">Search</button>
         </form>
+        <div style="margin-top: 20px;">
+            <a href="/stats" target="_blank"><button type="button">View Database Statistics</button></a>
+            <a href="/health" target="_blank"><button type="button">Health Check</button></a>
+        </div>
     </div>
 
-    <div class="section">
-        <h2>📊 System Status</h2>
-        <a href="/stats" target="_blank"><button>View Database Statistics</button></a>
-        <a href="/health" target="_blank"><button>Health Check</button></a>
+    <div id="tab-embed" class="tab-panel section">
+        <h2>📤 Upload & Process Document</h2>
+        <p>Supported formats: PDF, DOCX, TXT. Documents are chunked semantically and stored with vector embeddings.</p>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".pdf,.docx,.txt" required>
+            <br>
+            <label>PDF Parsing Backend:</label>
+            <select name="parse_backend" class="model-select">
+                <option value="">Default (PyMuPDF only)</option>
+                <option value="gemini-docling">Gemini Vision (docling)</option>
+                <option value="ollama">Local LLM — qwen3.5:9b (Ollama)</option>
+            </select>
+            <br>
+            <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
+            <br>
+            <label>Table Name: <input type="text" name="table_name" placeholder="document_chunks"></label>
+            <br>
+            <label>Chunk Size: <input type="number" name="chunk_size" value="512" min="128" max="2048"></label>
+            <br>
+            <button type="submit">Upload & Process</button>
+        </form>
     </div>
 
         <!-- Success/Error notification -->
@@ -140,6 +193,13 @@ HOME_PAGE_HTML = """
     </div>
 
     <script>
+        function switchTab(tab, btn) {
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            btn.classList.add('active');
+        }
+
         const PASSWORD_KEY = 'rag_access_password';
 
         function loadPassword() {
@@ -348,6 +408,9 @@ SEARCH_RESULTS_HTML = """
     <div class="answer">
         <h2>💡 Answer</h2>
         <p>{answer}</p>
+        <div class="stats" style="margin-top: 15px; margin-bottom: 0;">
+            🪙 <strong>Tokens:</strong> {token_display}
+        </div>
     </div>
 
     <div class="sources">
@@ -364,7 +427,8 @@ SEARCH_RESULTS_HTML = """
         • Threshold: {threshold_used}<br>
         • Response confidence: {confidence}<br>
         • Response word count: {word_count}<br>
-        • Graph enriched: {graph_enriched}
+        • Graph enriched: {graph_enriched}<br>
+        • Tokens: {token_display}
     </div>
 </body>
 </html>

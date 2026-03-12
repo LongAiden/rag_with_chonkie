@@ -10,6 +10,7 @@ class QueryRequest(BaseModel):
     document_ids: Optional[List[str]] = None
     enable_reranking: bool = Field(default=False, description="Enable cross-encoder reranking")
     rerank_top_k: Optional[int] = Field(None, ge=1, le=20, description="Number of results to return after reranking")
+    model: str = Field(default="gemini-2.5-flash", description="LLM model to use for response generation")
 
 
 class UploadResponse(BaseModel):
@@ -90,6 +91,9 @@ class RAGResponseMetadata(BaseModel):
         None, description="Average reranking score")
     graph_enriched: Optional[bool] = Field(
         None, description="Whether knowledge graph entities were used to enrich results")
+    input_tokens: Optional[int] = Field(None, description="Input tokens used by LLM")
+    output_tokens: Optional[int] = Field(None, description="Output tokens used by LLM")
+    total_tokens: Optional[int] = Field(None, description="Total tokens used by LLM")
 
 
 class RAGResponse(BaseModel):

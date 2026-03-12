@@ -10,11 +10,43 @@ from api.config import get_gemini_model
 from models.models import SimpleRAGResponse
 
 
+async def _generate_ollama_response(
+    query: str,
+    context: str,
+    results: list,
+    model: str
+) -> SimpleRAGResponse:
+    import httpx
+    prompt = f"Context from documents:\n{context}\n\nUser Question: {query}\nAnswer:"
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            "http://localhost:11434/api/generate",
+            json={"model": model, "prompt": prompt, "stream": False}
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        answer = data["response"]
+        input_tokens = data.get("prompt_eval_count")
+        output_tokens = data.get("eval_count")
+        total_tokens = (input_tokens or 0) + (output_tokens or 0) or None
+    return SimpleRAGResponse(
+        answer=answer,
+        confidence=None,
+        word_count=len(answer.split()),
+        sources_used=len(results),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        metadata={"method": "ollama", "model": model}
+    )
+
+
 async def generate_llm_response(
     query: str,
     context: str,
     results: list,
-    agent
+    agent,
+    model: str = "gemini-2.5-flash"
 ) -> SimpleRAGResponse:
     """
     Generate LLM response using Pydantic AI Agent or fallback.
@@ -28,6 +60,9 @@ async def generate_llm_response(
     Returns:
         SimpleRAGResponse with answer, confidence, word count, and metadata
     """
+    if model == "deepseek-r1:8b":
+        return await _generate_ollama_response(query, context, results, model)
+
     # Calculate metadata
     sources_used = len(results)
     gemini_model = get_gemini_model()

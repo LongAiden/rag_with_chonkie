@@ -51,6 +51,7 @@ async def upload_and_process(
     file: UploadFile = File(...),
     chunk_size: int = Form(512),
     table_name: str = Form("document_chunks"),
+    parse_backend: str = Form(""),
     access_password: Optional[str] = Form(None),
     x_app_password: Optional[str] = Header(default=None),
     # Dependencies injected by main app
@@ -149,6 +150,7 @@ async def upload_and_process(
                 chunk_size=chunk_size,
                 similarity_threshold=DEFAULT_CHUNKING_SIMILARITY,
                 document_id=document_id,
+                parse_backend=parse_backend,
                 metadata={
                     'filename': file.filename,
                     'content_type': file.content_type,
@@ -221,6 +223,7 @@ async def query_documents_form(
     limit: int = Form(5),
     threshold: float = Form(0.3),
     table_name: str = Form(DEFAULT_TABLE_NAME),
+    model: str = Form("gemini-2.5-flash"),
     access_password: Optional[str] = Form(None),
     # Dependencies injected by main app
     config=None,
@@ -237,7 +240,8 @@ async def query_documents_form(
             pipeline=pipeline,
             config=config,
             document_ids=None,
-            table_name=table_name
+            table_name=table_name,
+            model=model
         )
 
         # Build sources HTML with optional BM25 rerank scores
@@ -250,19 +254,28 @@ async def query_documents_form(
         """ for i, source in enumerate(result.sources)])
 
         # Use template with substitutions
+        stats = result.search_stats
+        input_tok = stats.input_tokens
+        output_tok = stats.output_tokens
+        total_tok = stats.total_tokens
+        token_display = (
+            f"↑ {input_tok:,} in · ↓ {output_tok:,} out · Σ {total_tok:,} total"
+            if total_tok else "N/A"
+        )
         html_content = SEARCH_RESULTS_HTML.format(
             query=query,
             answer=result.answer.strip(),
             source_count=len(result.sources),
             sources_html=sources_html,
-            chunks_found=result.search_stats.chunks_found,
-            avg_similarity=f"{result.search_stats.avg_similarity:.1%}",
-            search_method=result.search_stats.search_method,
+            chunks_found=stats.chunks_found,
+            avg_similarity=f"{stats.avg_similarity:.1%}",
+            search_method=stats.search_method,
             table_used=result.table_used,
-            threshold_used=f"{result.search_stats.threshold_used:.1%}",
-            confidence=f"{result.search_stats.confidence:.1%}" if result.search_stats.confidence else "N/A",
-            word_count=result.search_stats.word_count or 0,
-            graph_enriched="Yes" if result.search_stats.graph_enriched else "No"
+            threshold_used=f"{stats.threshold_used:.1%}",
+            confidence=f"{stats.confidence:.1%}" if stats.confidence else "N/A",
+            word_count=stats.word_count or 0,
+            graph_enriched="Yes" if stats.graph_enriched else "No",
+            token_display=token_display
         )
 
         return html_content
