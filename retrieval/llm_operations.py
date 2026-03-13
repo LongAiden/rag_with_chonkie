@@ -8,6 +8,7 @@ from typing import List
 
 from api.config import get_gemini_model
 from models.models import SimpleRAGResponse
+from ingestion.processors.prompts import OLLAMA_RAG_PROMPT_TEMPLATE
 
 
 async def _generate_ollama_response(
@@ -17,7 +18,7 @@ async def _generate_ollama_response(
     model: str
 ) -> SimpleRAGResponse:
     import httpx
-    prompt = f"Context from documents:\n{context}\n\nUser Question: {query}\nAnswer:"
+    prompt = OLLAMA_RAG_PROMPT_TEMPLATE.format(context=context, query=query)
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             "http://localhost:11434/api/generate",

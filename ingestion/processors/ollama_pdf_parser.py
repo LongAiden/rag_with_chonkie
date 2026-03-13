@@ -9,39 +9,19 @@ from PIL import Image as PILImage
 
 from ingestion.processors.gemini_docling_parser import (
     GeminiDoclingParser,
-    _VLM_IMAGE_PROMPT,
-    _VLM_TABLE_PROMPT,
     _strip_code_fences,
     _normalize_tables_in_markdown,
     _clean_html,
     _fix_table_closing_tags,
 )
+from ingestion.processors.prompts import (
+    VLM_IMAGE_PROMPT as _VLM_IMAGE_PROMPT,
+    VLM_TABLE_PROMPT as _VLM_TABLE_PROMPT,
+    OLLAMA_IMAGE_PROMPT as _OLLAMA_IMAGE_PROMPT,
+    OLLAMA_TABLE_PROMPT as _OLLAMA_TABLE_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
-
-_OLLAMA_IMAGE_PROMPT = """\
-Look at this image from a PDF page.
-
-1. If it contains readable text (labels, captions, annotations), transcribe it verbatim inside <figure></figure> tags.
-2. If it contains a chart or diagram, briefly describe what it shows (1-2 sentences) inside <figure></figure> tags.
-3. If it is a logo, icon, decorative element, or you cannot extract meaningful content, respond with exactly: <figure>[IMAGE]</figure>
-
-Output only the <figure>...</figure> block. No extra commentary.
-"""
-
-_OLLAMA_TABLE_PROMPT = """\
-Look at this image from a PDF page. It contains a table.
-
-Extract the table content as a GitHub-flavoured markdown table inside <table></table> tags.
-
-Rules:
-- Use | col1 | col2 | syntax.
-- Separator row uses only dashes: |---|---|
-- Join multi-line cell text with a single space.
-- If the table is unreadable, respond with exactly: <table>[TABLE]</table>
-
-Output only the <table>...</table> block. No extra commentary.
-"""
 
 
 class OllamaPDFParser(GeminiDoclingParser):
