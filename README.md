@@ -5,15 +5,17 @@ A Retrieval-Augmented Generation (RAG) system built with FastAPI, PostgreSQL + p
 ## How It Works
 
 ```
-PDF file  →  PDFToMarkdownConverter  →  MarkdownChunker  →  pgvector  →  Query + Rerank  →  Gemini Answer
-input/pdf/       (ingestion)            (chonkie)           (PostgreSQL)   (BM25)            (pydantic-ai)
+PDF file  →  Parser (choose one)       →  MarkdownChunker  →  pgvector  →  Query + Rerank  →  LLM Answer (choose one)
+input/pdf/   • PyMuPDF (default)          (chonkie)           (PostgreSQL)   (BM25)            • Gemini 2.5 Flash
+             • Docling + Ollama VLM                                                             • DeepSeek-R1 8B (Ollama)
+             • Docling + Gemini Vision
 ```
 
-1. **Upload a PDF** - the app converts it to Markdown and stores in `input/markdown/`
+1. **Upload a PDF** - choose a parsing backend: fast PyMuPDF (default), Docling + local Ollama VLM (`qwen2.5vl:7b`), or Docling + Gemini Vision. The result is stored as Markdown in `input/markdown/`
 2. **Chunk** - the Markdown is split into chunks using a structure-aware MarkdownChunker
 3. **Embed** - each chunk is embedded with `all-MiniLM-L6-v2` and stored in pgvector
 4. **Query** - a question triggers vector similarity search + BM25 reranking
-5. **Answer** - top chunks are passed to Gemini which returns a structured answer
+5. **Answer** - top chunks are passed to your chosen LLM: **Gemini 2.5 Flash** (cloud) or **DeepSeek-R1 8B** running locally via Ollama
 
 ---
 
@@ -22,7 +24,8 @@ input/pdf/       (ingestion)            (chonkie)           (PostgreSQL)   (BM25
 ### 1. Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) (8 GB+ RAM allocated)
-- A [Google Gemini API key](https://makersuite.google.com/app/apikey)
+- A [Google Gemini API key](https://makersuite.google.com/app/apikey) *(optional — only required for Gemini parsing or Gemini Q&A)*
+- [Ollama](https://ollama.com) running locally *(optional — required for local LLM parsing and Q&A)*
 
 ### 2. Configure environment
 
@@ -147,7 +150,7 @@ rag_with_llama/
 │
 ├── retrieval/
 │   ├── search.py                 # Vector search → BM25 rerank → LLM
-│   ├── llm_operations.py         # Gemini answer generation
+│   ├── llm_operations.py         # LLM answer generation (Gemini or Ollama)
 │   └── utils.py                  # BM25 scorer
 │
 ├── api/
@@ -199,10 +202,12 @@ Copy `.env.example` to `.env` and set these values:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GOOGLE_API_KEY` | Yes | - | Gemini API key |
+| `GOOGLE_API_KEY` | No* | - | Gemini API key *(required only for Gemini parsing or Gemini Q&A)* |
 | `POSTGRES_PASSWORD` | Yes | `admin` | Change in production |
 | `POSTGRES_DB` | No | `rag_db` | Database name |
-| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model to use |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model for Q&A |
+| `OLLAMA_BASE_URL` | No | `http://host.docker.internal:11434` | Ollama endpoint (Docker uses host network) |
+| `OLLAMA_VLM_MODEL` | No | `qwen2.5vl:7b` | VLM model for PDF image/table extraction |
 | `CHUNKER_TYPE` | No | `markdown` | `markdown` / `recursive` / `token` / `semantic` |
 | `APP_ACCESS_PASSWORD` | No | *(disabled)* | Password-protect the web UI |
 | `LOGFIRE_WRITE_TOKEN` | No | - | [Logfire](https://logfire.pydantic.dev/) monitoring |
@@ -306,17 +311,6 @@ docker compose up --build
 docker exec rag_postgres psql -U admin -d rag_db -c "\dt"
 docker exec -it rag_redis redis-cli
 ```
----
-
-## Known Issue - Gemini `additionalProperties` Warning
-
-```
-UserWarning: `additionalProperties` is not supported by Gemini; it will be removed from the tool JSON schema.
-```
-
-This is a known Gemini API limitation. It does not break functionality - responses work correctly, but the `metadata` field in LLM responses will be empty. See [pydantic-ai #1469](https://github.com/pydantic/pydantic-ai/issues/1469).
-
----
 
 ## Further Reading
 

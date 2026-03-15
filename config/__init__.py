@@ -18,7 +18,7 @@ from .app_config import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_CHUNKING_SIMILARITY,
     ALLOWED_CONTENT_TYPES,
-    get_gemini_model,
+    get_ollama_model,
 )
 
 __all__ = [
@@ -35,5 +35,5 @@ __all__ = [
     "DEFAULT_EMBEDDING_MODEL",
     "DEFAULT_CHUNKING_SIMILARITY",
     "ALLOWED_CONTENT_TYPES",
-    "get_gemini_model",
+    "get_ollama_model",
 ]

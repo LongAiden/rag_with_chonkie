@@ -1,27 +1,29 @@
 # Project Architecture Summary
 
-**Last Updated**: 2026-02-18
+**Last Updated**: 2026-03-14
 
 ---
 
 ## Quick Overview
 
 A **RAG (Retrieval-Augmented Generation)** system that:
-1. Converts PDFs to Markdown
+1. Converts PDFs to Markdown using a selectable parser: PyMuPDF (default), Docling + Ollama VLM (local), or Docling + Gemini Vision (cloud)
 2. Chunks the Markdown with structure-aware chunkers
 3. Stores chunk embeddings in pgvector
 4. Retrieves relevant chunks via vector search + BM25 reranking
-5. Generates answers with a Gemini LLM
+5. Generates answers with a selectable LLM: **Gemini 2.5 Flash** (cloud) or **DeepSeek-R1 8B** via Ollama (local)
 
 ---
 
 ## End-to-End Workflow
 
 ```
-┌──────────────┐    ┌──────────────────────┐    ┌─────────────┐
-│  POST /upload│───▶│ PDFToMarkdownConverter│───▶│ input/      │
-│  (PDF file)  │    │ (ingestion/processors)│    │  markdown/  │
-└──────────────┘    └──────────────────────┘    └──────┬──────┘
+┌──────────────┐    ┌──────────────────────────────────┐    ┌─────────────┐
+│  POST /upload│───▶│ Parser (select via parse_backend) │───▶│ input/      │
+│  (PDF file)  │    │ • PyMuPDF (default)               │    │  markdown/  │
+│              │    │ • Docling + Ollama VLM (local)    │    │             │
+│              │    │ • Docling + Gemini Vision (cloud)  │    │             │
+└──────────────┘    └──────────────────────────────────┘    └──────┬──────┘
                                                         │
                     ┌───────────────────────────────────▼──────┐
                     │  MarkdownChunker (chonkie)                │
@@ -38,10 +40,11 @@ A **RAG (Retrieval-Augmented Generation)** system that:
 │  (question)  │    │ (pgvector cosine)    │    │ (top-5 results)  │
 └──────────────┘    └─────────────────────┘    └────────┬─────────┘
                                                          │
-                                              ┌──────────▼─────────┐
-                                              │  Gemini LLM         │
-                                              │  (pydantic-ai)      │
-                                              └──────────┬──────────┘
+                                              ┌──────────▼──────────────────────┐
+                                              │  LLM (select via model param)   │
+                                              │  • Gemini 2.5 Flash (cloud)     │
+                                              │  • DeepSeek-R1 8B / Ollama      │
+                                              └──────────┬──────────────────────┘
                                                          │
                                               ┌──────────▼──────────┐
                                               │  RAGResponse (JSON)  │
@@ -85,7 +88,7 @@ rag_with_llama/
 ├── retrieval/                    # 🔍 Search & Answer Generation
 │   ├── search.py                 # Main search: vector → rerank → LLM
 │   ├── reranking.py              # BM25Reranker class
-│   ├── llm_operations.py         # Gemini LLM response generation
+│   ├── llm_operations.py         # LLM response generation (Gemini or Ollama)
 │   └── utils.py                  # rerank_bm25() helper
 │
 ├── api/                          # 🌐 FastAPI Application
@@ -208,10 +211,12 @@ All configuration lives in `config/app_config.py`. Key settings:
 | Database host | `POSTGRES_HOST` | `localhost` |
 | Database name | `POSTGRES_DB` | `rag_db` |
 | Gemini model | `GEMINI_MODEL` | `gemini-2.5-flash` |
+| Ollama endpoint | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` |
+| Ollama VLM model | `OLLAMA_VLM_MODEL` | `qwen2.5vl:7b` |
 | Embedding model | *(hardcoded)* | `all-MiniLM-L6-v2` |
 | Table name | *(param)* | `document_chunks` |
 | Chunker type | `CHUNKER_TYPE` | `markdown` |
-| Google API key | `GOOGLE_API_KEY` | - |
+| Google API key | `GOOGLE_API_KEY` | - *(optional, Gemini only)* |
 | Logfire token | `LOGFIRE_WRITE_TOKEN` | - |
 
 ---

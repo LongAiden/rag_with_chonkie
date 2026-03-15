@@ -5,7 +5,10 @@
 This project processes documents through a two-step pipeline before chunking:
 
 ```
-input/pdf/ → PDFToMarkdownConverter → input/markdown/ → Chunker → Vector DB
+input/pdf/ → Parser (choose one) → input/markdown/ → Chunker → Vector DB
+               • PyMuPDF (default)
+               • Docling + Ollama VLM (local)
+               • Docling + Gemini Vision (cloud)
 ```
 
 Since the chunker always receives **Markdown text** (not raw PDF text), the default chunker is the **MarkdownChunker**, which is aware of markdown structure (headings, lists, code blocks, etc.).
