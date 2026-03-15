@@ -1,6 +1,7 @@
 import base64
 import io
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -40,7 +41,7 @@ class OllamaPDFParser(GeminiDoclingParser):
         ollama_base_url: str = "http://localhost:11434",
         vlm_model: str = "qwen3.5:9b",
         vlm_timeout: float = 120.0,
-        images_scale: float = 1.0,
+        images_scale: float = 0.75,
         complex_table_rows: int = 8,
         complex_table_cols: int = 6,
         max_pages: Optional[int] = None,
@@ -115,14 +116,23 @@ class OllamaPDFParser(GeminiDoclingParser):
     # ── Fix 3: page-by-page with heading level shift ──────────────────────────
 
     def parse_pdf(self, path, output_path=None) -> str:
-        """Parse PDF page-by-page using Docling + Ollama VLM."""
+        """Parse PDF using single-pass Docling conversion + Ollama VLM for images/tables."""
         self._vlm_calls = 0
         pdf_path = str(path)
 
-        total_pages = self._count_pages(pdf_path)
+        logger.info(f"Docling converting (single pass): {Path(pdf_path).name}")
+        conv = self._build_converter().convert(pdf_path)
+        doc = conv.document
+
+        page_items: dict[int, list] = defaultdict(list)
+        for item, _ in doc.iterate_items():
+            if item.prov:
+                page_items[item.prov[0].page_no].append(item)
+
+        total_pages = len(doc.pages)
         if self._max_pages is not None:
             total_pages = min(total_pages, self._max_pages)
-        logger.info(f"Parsing {total_pages} pages with Ollama VLM ({self._vlm_model})")
+        logger.info(f"Assembling {total_pages} pages with Ollama VLM ({self._vlm_model})")
 
         pages_md = []
         out_file = None
@@ -130,17 +140,15 @@ class OllamaPDFParser(GeminiDoclingParser):
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             out_file = open(output_path, "w", encoding="utf-8")
 
-        converter = self._build_converter()
-
         try:
             for page_no in range(1, total_pages + 1):
-                print(f"[{page_no}/{total_pages}] converting … ", end="", flush=True)
+                print(f"[{page_no}/{total_pages}] assembling … ", end="", flush=True)
                 try:
-                    conv = converter.convert(pdf_path, page_range=(page_no, page_no))
-                    doc = conv.document
-                    items = [item for item, _ in doc.iterate_items() if item.prov]
-
-                    page_md = self._process_page(page_no=page_no, items=items, doc=doc)
+                    page_md = self._process_page(
+                        page_no=page_no,
+                        items=page_items.get(page_no, []),
+                        doc=doc,
+                    )
                     page_md = _normalize_tables_in_markdown(page_md)
                     page_md = _clean_html(page_md)
                     page_md = _fix_table_closing_tags(page_md)
