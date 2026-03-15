@@ -10,9 +10,9 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 import logfire
-from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
 from ingestion.validation.file_validator import FileValidator, FileValidationConfig
 from models.models import SimpleRAGResponse
@@ -120,11 +120,10 @@ class AppConfig:
     def _configure_pydantic_ai(self) -> Optional[Agent]:
         """Configure Pydantic AI Agent with Ollama via OpenAI-compatible endpoint."""
         try:
-            client = AsyncOpenAI(
-                base_url=f"{self.settings.ollama_base_url}/v1",
-                api_key="ollama",
+            model = OpenAIModel(
+                self.settings.ollama_model,
+                provider=OllamaProvider(base_url=self.settings.ollama_base_url),
             )
-            model = OpenAIModel(self.settings.ollama_model, openai_client=client)
 
             agent = Agent(
                 model,

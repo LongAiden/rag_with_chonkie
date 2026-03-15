@@ -91,6 +91,7 @@ async def upload_route(
     file: UploadFile = File(...),
     chunk_size: int = Form(512),
     table_name: str = Form("document_chunks"),
+    parse_backend: str = Form("ollama"),
     access_password: Optional[str] = Form(None),
     x_app_password: Optional[str] = Header(default=None),
 ):
@@ -99,6 +100,7 @@ async def upload_route(
         file=file,
         chunk_size=chunk_size,
         table_name=table_name,
+        parse_backend=parse_backend,
         access_password=access_password,
         x_app_password=x_app_password,
         config=config,
