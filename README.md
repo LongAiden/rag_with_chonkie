@@ -207,10 +207,24 @@ Copy `.env.example` to `.env` and set these values:
 | `POSTGRES_DB` | No | `rag_db` | Database name |
 | `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model for Q&A |
 | `OLLAMA_BASE_URL` | No | `http://host.docker.internal:11434` | Ollama endpoint (Docker uses host network) |
+| `OLLAMA_MODEL` | No | `deepseek-r1:8b` | Text model for RAG Q&A (runs locally via Ollama) |
 | `OLLAMA_VLM_MODEL` | No | `qwen2.5vl:7b` | VLM model for PDF image/table extraction |
 | `CHUNKER_TYPE` | No | `markdown` | `markdown` / `recursive` / `token` / `semantic` |
 | `APP_ACCESS_PASSWORD` | No | *(disabled)* | Password-protect the web UI |
 | `LOGFIRE_WRITE_TOKEN` | No | - | [Logfire](https://logfire.pydantic.dev/) monitoring |
+
+### How Ollama is used
+
+This project does **not** use the OpenAI API. Ollama exposes an OpenAI-compatible REST API at `/v1/chat/completions`, so pydantic-ai's `OpenAIModel` is reused with an `OllamaProvider` pointing to your local Ollama server:
+
+```
+pydantic-ai OpenAIModel  →  OllamaProvider(base_url=OLLAMA_BASE_URL)  →  Ollama (runs on Windows host)
+```
+
+- `OLLAMA_MODEL` (`deepseek-r1:8b`) — answers user questions in the RAG pipeline
+- `OLLAMA_VLM_MODEL` (`qwen2.5vl:7b`) — processes images and complex tables during PDF parsing (Docling + Ollama backend only)
+
+No API key or internet connection is required for Ollama models.
 
 ---
 
