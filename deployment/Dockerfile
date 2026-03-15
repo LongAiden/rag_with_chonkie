@@ -27,7 +27,11 @@ WORKDIR /build
 
 # Install application dependencies (fast - ML packages already in base)
 COPY deployment/requirements.txt .
-RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
+RUN pip install --no-cache-dir --prefer-binary \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        -r requirements.txt && \
+    pip uninstall -y opencv-python 2>/dev/null; \
+    pip install --no-cache-dir opencv-python-headless
 
 # Stage 2: Runtime image (stays lean)
 FROM python:${PYTHON_VERSION}-slim AS runtime
@@ -45,6 +49,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         libpq-dev \
+        libgl1 \
+        libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy prebuilt virtualenv from builder stage
