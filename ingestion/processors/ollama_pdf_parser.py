@@ -39,8 +39,8 @@ class OllamaPDFParser(GeminiDoclingParser):
     def __init__(
         self,
         ollama_base_url: str = "http://localhost:11434",
-        vlm_model: str = "qwen3.5:9b",
-        vlm_timeout: float = 120.0,
+        vlm_model: str = "qwen3.5:4b",
+        vlm_timeout: float = 300.0,
         images_scale: float = 0.75,
         complex_table_rows: int = 8,
         complex_table_cols: int = 6,
@@ -91,9 +91,21 @@ class OllamaPDFParser(GeminiDoclingParser):
         try:
             buf = io.BytesIO()
             pil_img.save(buf, format="PNG")
+            img_size_kb = len(buf.getvalue()) / 1024
             b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
             self._vlm_calls += 1
+            logger.info(
+                f"VLM call #{self._vlm_calls}: model={self._vlm_model}, "
+                f"img={pil_img.width}x{pil_img.height}px, {img_size_kb:.1f}KB, "
+                f"url={self._ollama_base_url}/api/generate"
+            )
+            timeout = httpx.Timeout(
+                connect=10.0,
+                read=self._vlm_timeout,
+                write=10.0,
+                pool=10.0,
+            )
             response = httpx.post(
                 f"{self._ollama_base_url}/api/generate",
                 json={
@@ -102,7 +114,7 @@ class OllamaPDFParser(GeminiDoclingParser):
                     "images": [b64],
                     "stream": False,
                 },
-                timeout=self._vlm_timeout,
+                timeout=timeout,
             )
             response.raise_for_status()
             raw = response.json()["response"]

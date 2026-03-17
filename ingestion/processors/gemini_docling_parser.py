@@ -322,7 +322,7 @@ class GeminiDoclingParser(PDFParserBase):
                 if pil is None:
                     logger.warning(f"  p{page_no}: complex table has no image, falling back to Docling")
                     try:
-                        md = item.export_to_markdown()
+                        md = item.export_to_markdown(doc)
                     except Exception:
                         md = str(item.data)
                     md = f"<table>\n\n{md}\n\n</table>"
@@ -339,7 +339,7 @@ class GeminiDoclingParser(PDFParserBase):
             elif isinstance(item, TableItem):
                 logger.debug(f"  p{page_no}: simple table ({item.data.num_rows}×{item.data.num_cols}) → Docling")
                 try:
-                    md = item.export_to_markdown()
+                    md = item.export_to_markdown(doc)
                 except Exception:
                     try:
                         md = item.export_to_dataframe().to_markdown(index=False)

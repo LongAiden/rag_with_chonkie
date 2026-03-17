@@ -173,7 +173,7 @@ HOME_PAGE_HTML = """
             <select name="parse_backend" class="model-select">
                 <option value="">Default (PyMuPDF only)</option>
                 <option value="gemini-docling">Gemini Vision (docling)</option>
-                <option value="ollama">Local LLM — qwen3.5:9b (Ollama)</option>
+                <option value="ollama">Local LLM — qwen3.5:4b (Ollama)</option>
             </select>
             <br>
             <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>

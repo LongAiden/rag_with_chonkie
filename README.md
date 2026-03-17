@@ -54,14 +54,16 @@ The app is ready when you see:
 rag_app  | INFO:     Application startup complete.
 ```
 
-Open **http://localhost:8000**
+Open **http://127.0.0.1:8000**
+
+> **Windows users:** use `http://127.0.0.1:8000` (not `localhost`). Windows 11 resolves `localhost` to IPv6 (`::1`) but Docker only binds to IPv4, causing the browser to hang silently.
 
 | URL | Description |
 |-----|-------------|
-| http://localhost:8000 | Web UI (upload + search) |
-| http://localhost:8000/docs | **Swagger UI - interactive API docs** |
-| http://localhost:8000/redoc | ReDoc - readable API reference |
-| http://localhost:8000/health | Health check |
+| http://127.0.0.1:8000 | Web UI (upload + search) |
+| http://127.0.0.1:8000/docs | **Swagger UI - interactive API docs** |
+| http://127.0.0.1:8000/redoc | ReDoc - readable API reference |
+| http://127.0.0.1:8000/health | Health check |
 
 > **Swagger UI** (`/docs`) lets you call every endpoint directly from the browser - no curl or Postman needed. Click an endpoint → **Try it out** → fill in params → **Execute**.
 
@@ -86,7 +88,7 @@ docker compose down
 ```bash
 # Start pgAdmin (optional database UI)
 docker compose --profile dev up -d pgadmin
-# Then open http://localhost:5050
+# Then open http://127.0.0.1:5050
 ```
 
 ---
@@ -108,7 +110,7 @@ docker compose --profile dev up -d pgadmin
 
 **Upload a PDF:**
 ```bash
-curl -X POST "http://localhost:8000/upload" \
+curl -X POST "http://127.0.0.1:8000/upload" \
   -F "file=@input/pdf/llama2.pdf" \
   -F "chunk_size=512" \
   -F "table_name=documents"
@@ -116,7 +118,7 @@ curl -X POST "http://localhost:8000/upload" \
 
 **Ask a question:**
 ```bash
-curl -X POST "http://localhost:8000/query" \
+curl -X POST "http://127.0.0.1:8000/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "What safety measures does Llama 2 have?", "limit": 5}'
 ```
@@ -222,7 +224,7 @@ pydantic-ai OpenAIModel  →  OllamaProvider(base_url=OLLAMA_BASE_URL)  →  Oll
 ```
 
 - `OLLAMA_MODEL` (`deepseek-r1:8b`) — answers user questions in the RAG pipeline
-- `OLLAMA_VLM_MODEL` (`qwen2.5vl:7b`) — processes images and complex tables during PDF parsing (Docling + Ollama backend only)
+- `OLLAMA_VLM_MODEL` — processes images and complex tables during PDF parsing (Docling + Ollama backend only)
 
 No API key or internet connection is required for Ollama models.
 
