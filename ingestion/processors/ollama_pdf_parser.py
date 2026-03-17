@@ -48,6 +48,7 @@ class OllamaPDFParser(GeminiDoclingParser):
         h1_min_height: float = 20.0,
         h2_min_height: float = 11.0,
         h3_min_height: float = 9.0,
+        min_image_px: int = 150,
     ):
         super().__init__(
             api_key=None,
@@ -59,6 +60,7 @@ class OllamaPDFParser(GeminiDoclingParser):
             h1_min_height=h1_min_height,
             h2_min_height=h2_min_height,
             h3_min_height=h3_min_height,
+            min_image_px=min_image_px,
         )
         self._ollama_base_url = ollama_base_url.rstrip("/")
         self._vlm_model = vlm_model

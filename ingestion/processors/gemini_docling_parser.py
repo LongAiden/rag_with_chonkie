@@ -131,6 +131,7 @@ class GeminiDoclingParser(PDFParserBase):
         h1_min_height: float = 20.0,
         h2_min_height: float = 11.0,
         h3_min_height: float = 9.0,
+        min_image_px: int = 0,
     ):
         self._api_key = api_key
         self._gemini_model = gemini_model
@@ -141,6 +142,7 @@ class GeminiDoclingParser(PDFParserBase):
         self._h1_min_height = h1_min_height
         self._h2_min_height = h2_min_height
         self._h3_min_height = h3_min_height
+        self._min_image_px = min_image_px
         self._genai_model = None
         self._vlm_calls: int = 0
 
@@ -313,6 +315,9 @@ class GeminiDoclingParser(PDFParserBase):
                     label = "image"
                 if pil is None:
                     logger.warning(f"  p{page_no}: PictureItem has no image, skipping")
+                    continue
+                if self._min_image_px > 0 and (pil.width < self._min_image_px or pil.height < self._min_image_px):
+                    logger.debug(f"  p{page_no}: {label} too small ({pil.width}×{pil.height}px < {self._min_image_px}px), skipping VLM")
                     continue
                 logger.info(f"  p{page_no}: {label} ({pil.width}×{pil.height}px) → Gemini")
                 md = self._call_vlm(pil, _VLM_IMAGE_PROMPT).strip()
