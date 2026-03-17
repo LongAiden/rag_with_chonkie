@@ -73,6 +73,7 @@ from api.routes.document_routes import (
     upload_and_process,
     query_documents,
     query_documents_form,
+    list_tables,
     get_database_stats,
     health_check,
     get_supported_types,
@@ -139,6 +140,11 @@ async def query_form_route(
         config=config,
         get_pipeline=get_pipeline
     )
+
+
+@app.get("/tables")
+async def tables_route():
+    return await list_tables(get_pipeline=get_pipeline)
 
 
 @app.get("/stats", response_class=HTMLResponse)

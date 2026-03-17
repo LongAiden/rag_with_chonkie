@@ -597,6 +597,10 @@ STATS_PAGE_HTML = """
             <div class="stat-number">{avg_chunks_per_doc}</div>
             <div class="stat-label">Avg Chunks/Doc</div>
         </div>
+        <div class="stat-card">
+            <div class="stat-number">{total_tables}</div>
+            <div class="stat-label">Tables</div>
+        </div>
     </div>
 
     <div class="config-section">

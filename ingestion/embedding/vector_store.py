@@ -342,7 +342,7 @@ class VectorStore:
             print(f"Database initialized with table: {self.table_name}")
 
         except Exception as e:
-            print(f"Error initializing database: {e}")
+            print(f"Error initializing database: {type(e).__name__}: {e}")
             raise
 
     async def add_chunks(self, chunks: List[Chunk], batch_size: int = 100):
@@ -388,7 +388,10 @@ class VectorStore:
             print(f"Added {len(chunks)} chunks to vector store")
 
         except Exception as e:
-            print(f"Error adding chunks: {e}")
+            print(f"Error adding chunks: {type(e).__name__}: {e}")
+            if chunks:
+                meta_sizes = [len(json.dumps(c.metadata)) if c.metadata else 0 for c in chunks[:5]]
+                print(f"  Sample metadata sizes (first 5): {meta_sizes}")
             raise
 
     async def search_similar_chunks(self, query_embedding: List[float],
@@ -509,7 +512,7 @@ class VectorStore:
             await conn.close()
             return stats
         except Exception as e:
-            print(f"Error getting stats: {e}")
+            print(f"Error getting stats: {type(e).__name__}: {e}")
             raise
 
 
@@ -700,14 +703,19 @@ class ChunkEmbeddingPipeline:
             # Extract page number from chunk (set by imported process_document function)
             page_number = getattr(chunk, 'page_number', 1)
 
+            # Truncate large text fields to prevent oversized JSONB payloads
+            # that cause asyncpg insertion failures
+            MAX_META_TEXT = 2000
+            raw_page_content = page_content_cache.get(page_number, "")
+            raw_full_content = getattr(chunk, 'full_content', '') or ''
             chunk_metadata = {
                 'chunk_index': i,
                 'token_count': chunk.token_count,
                 'start_index': getattr(chunk, 'start_index', None),
                 'end_index': getattr(chunk, 'end_index', None),
                 'page_number': page_number,
-                'page_content': page_content_cache.get(page_number, ""),
-                'full_content': getattr(chunk, 'full_content', ''),
+                'page_content': raw_page_content[:MAX_META_TEXT] if raw_page_content else "",
+                'full_content': raw_full_content[:MAX_META_TEXT] if raw_full_content else "",
                 'chunk_size': chunk_size,
                 'similarity_threshold': similarity_threshold,
                 'embedding_model': self.embedding_generator.model_name,

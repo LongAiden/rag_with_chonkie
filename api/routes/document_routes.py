@@ -295,6 +295,53 @@ async def query_documents_form(
         return SEARCH_ERROR_HTML.format(error_message=error_msg)
 
 
+@router.get("/tables")
+async def list_tables(get_pipeline=None):
+    """List all chunk tables in the database with row counts."""
+    try:
+        pipeline = await get_pipeline(DEFAULT_TABLE_NAME)
+        conn = await pipeline.vector_store._get_connection()
+
+        try:
+            tables = await conn.fetch("""
+                SELECT DISTINCT t1.table_name
+                FROM information_schema.columns t1
+                WHERE t1.table_schema = 'public'
+                AND t1.column_name = 'document_id'
+                AND EXISTS (
+                    SELECT 1 FROM information_schema.columns t2
+                    WHERE t2.table_name = t1.table_name
+                    AND t2.table_schema = 'public'
+                    AND t2.column_name = 'embedding'
+                )
+                AND t1.table_name NOT IN ('entities', 'relationships', 'entity_nodes', 'entity_edges')
+                ORDER BY t1.table_name
+            """)
+
+            result = []
+            for row in tables:
+                tname = row['table_name']
+                stats = await conn.fetchrow(f"""
+                    SELECT
+                        COUNT(DISTINCT document_id) as documents,
+                        COUNT(*) as chunks
+                    FROM {tname}
+                """)
+                result.append({
+                    "table_name": tname,
+                    "documents": stats['documents'],
+                    "chunks": stats['chunks']
+                })
+
+            return {"tables": result, "total_tables": len(result)}
+
+        finally:
+            await conn.close()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list tables: {str(e)}")
+
+
 @router.get("/stats", response_class=HTMLResponse)
 async def get_database_stats(get_pipeline=None):
     """Get database statistics from ALL chunk tables."""
@@ -378,6 +425,7 @@ async def get_database_stats(get_pipeline=None):
                 total_chunks=f"{stats['total_chunks']:,}",
                 avg_text_length=f"{stats['avg_text_length']:.0f}",
                 avg_chunks_per_doc=f"{stats['total_chunks'] // max(stats['total_documents'], 1):.0f}",
+                total_tables=len(table_names) if table_names else 1,
                 embedding_model=pipeline.embedding_generator.model_name,
                 embedding_dim=pipeline.embedding_generator.embedding_dim,
                 table_name=table_display,
