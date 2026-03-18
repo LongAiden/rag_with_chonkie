@@ -317,9 +317,9 @@ class GeminiDoclingParser(PDFParserBase):
                     logger.warning(f"  p{page_no}: PictureItem has no image, skipping")
                     continue
                 if self._min_image_px > 0 and (pil.width < self._min_image_px or pil.height < self._min_image_px):
-                    logger.debug(f"  p{page_no}: {label} too small ({pil.width}×{pil.height}px < {self._min_image_px}px), skipping VLM")
+                    print(f"  p{page_no}: {label} too small ({pil.width}×{pil.height}px < {self._min_image_px}px), skipping VLM", flush=True)
                     continue
-                logger.info(f"  p{page_no}: {label} ({pil.width}×{pil.height}px) → Gemini")
+                print(f"  p{page_no}: {label} ({pil.width}×{pil.height}px) → VLM", flush=True)
                 md = self._call_vlm(pil, _VLM_IMAGE_PROMPT).strip()
 
             elif isinstance(item, TableItem) and self._is_complex_table(item):
@@ -332,10 +332,10 @@ class GeminiDoclingParser(PDFParserBase):
                         md = str(item.data)
                     md = f"<table>\n\n{md}\n\n</table>"
                 else:
-                    logger.info(
+                    print(
                         f"  p{page_no}: complex table "
                         f"({item.data.num_rows}×{item.data.num_cols}, "
-                        f"{pil.width}×{pil.height}px) → Gemini"
+                        f"{pil.width}×{pil.height}px) → VLM", flush=True
                     )
                     md = self._call_vlm(pil, _VLM_TABLE_PROMPT).strip()
                     if not md.startswith("<table>"):

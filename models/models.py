@@ -19,6 +19,10 @@ class UploadResponse(BaseModel):
     filename: str
     message: str
     chunks_created: Optional[int] = None
+    table_count: Optional[int] = Field(
+        default=None,
+        description="Number of chunk tables in the database after upload",
+    )
     task_id: Optional[str] = Field(
         default=None,
         description="Celery task id if processing/extraction was queued",

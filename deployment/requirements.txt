@@ -25,6 +25,7 @@ PyPDF2
 
 # Chunking Strategy
 chonkie>=1.4.0  # Latest stable version (1.4.2) with bug fixes
+flatbuffers>=23.5.26  # Required by chonkie's MongoDBHandshake at import time
 
 # LLM Integration
 google-generativeai>=0.8.0

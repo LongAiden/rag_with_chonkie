@@ -6,6 +6,7 @@ from sentence_transformers import SentenceTransformer
 import os
 import re
 import json
+import traceback
 import uuid
 import asyncpg
 import logfire
@@ -308,41 +309,49 @@ class VectorStore:
                 return
 
             conn = await self._get_connection()
+            try:
+                # Create table with proper vector column
+                # Assuming 384-dimensional embeddings for all-MiniLM-L6-v2
+                # Adjust dimension based on your model
+                await conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {self.table_name} (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    embedding vector(384),  -- Adjust dimension as needed
+                    metadata JSONB,
+                    entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
 
-            # Create table with proper vector column
-            # Assuming 384-dimensional embeddings for all-MiniLM-L6-v2
-            # Adjust dimension based on your model
-            await conn.execute(f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name} (
-                id TEXT PRIMARY KEY,
-                document_id TEXT NOT NULL,
-                text TEXT NOT NULL,
-                embedding vector(384),  -- Adjust dimension as needed
-                metadata JSONB,
-                entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-            """)
+                # Create index for similarity search
+                await conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_idx
+                ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
+                """)
 
-            # Create index for similarity search
-            await conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_idx
-            ON {self.table_name} USING ivfflat (embedding vector_cosine_ops)
-            WITH (lists = 100);
-            """)
+                # Create index on document_id for filtering
+                await conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS {self.table_name}_document_id_idx
+                ON {self.table_name} (document_id);
+                """)
 
-            # Create index on document_id for filtering
-            await conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS {self.table_name}_document_id_idx
-            ON {self.table_name} (document_id);
-            """)
-
-            await conn.close()
-            self._initialized = True
-            print(f"Database initialized with table: {self.table_name}")
+                self._initialized = True
+                print(f"Database initialized with table: {self.table_name}")
+            finally:
+                await conn.close()
 
         except Exception as e:
-            print(f"Error initializing database: {type(e).__name__}: {e}")
+            tb = traceback.format_exc()
+            logfire.error(
+                "Database initialization failed",
+                table_name=self.table_name,
+                error_type=type(e).__name__,
+                error=str(e),
+                traceback=tb,
+            )
+            print(f"[DB INIT ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
             raise
 
     async def add_chunks(self, chunks: List[Chunk], batch_size: int = 100):
@@ -364,19 +373,18 @@ class VectorStore:
                     chunk.document_id,
                     chunk.text,
                     embedding_str,
-                    json.dumps(
-                        chunk.metadata) if chunk.metadata else json.dumps({})
+                    json.dumps(chunk.metadata if chunk.metadata else {})
                 ))
 
             # Use asyncpg's executemany for efficient batch insert
             insert_sql = f"""
             INSERT INTO {self.table_name} (id, document_id, text, embedding, metadata)
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3, $4::vector, $5::jsonb)
             ON CONFLICT (id) DO UPDATE SET
                 document_id = EXCLUDED.document_id,
-                text = EXCLUDED.text,
-                embedding = EXCLUDED.embedding,
-                metadata = EXCLUDED.metadata;
+                text        = EXCLUDED.text,
+                embedding   = EXCLUDED.embedding,
+                metadata    = EXCLUDED.metadata;
             """
 
             # Process in batches
@@ -388,10 +396,16 @@ class VectorStore:
             print(f"Added {len(chunks)} chunks to vector store")
 
         except Exception as e:
-            print(f"Error adding chunks: {type(e).__name__}: {e}")
-            if chunks:
-                meta_sizes = [len(json.dumps(c.metadata)) if c.metadata else 0 for c in chunks[:5]]
-                print(f"  Sample metadata sizes (first 5): {meta_sizes}")
+            tb = traceback.format_exc()
+            logfire.error(
+                "Chunk insertion failed",
+                table_name=self.table_name,
+                num_chunks=len(chunks),
+                error_type=type(e).__name__,
+                error=str(e),
+                traceback=tb,
+            )
+            print(f"[ADD CHUNKS ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
             raise
 
     async def search_similar_chunks(self, query_embedding: List[float],
@@ -691,8 +705,21 @@ class ChunkEmbeddingPipeline:
                      sample_types=[type(t).__name__ for t in chunk_texts[:3]])
 
         # Generate embeddings in batch
+        logfire.info("Stage: generating embeddings", num_chunks=len(chunk_texts))
         print("Generating embeddings...")
-        embeddings = self.embedding_generator.embed_batch(chunk_texts)
+        try:
+            embeddings = self.embedding_generator.embed_batch(chunk_texts)
+        except Exception as e:
+            tb = traceback.format_exc()
+            logfire.error(
+                "Stage FAILED: embedding generation",
+                error_type=type(e).__name__,
+                error=str(e),
+                traceback=tb,
+            )
+            print(f"[EMBED ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
+            raise
+        logfire.info("Stage: embeddings generated", num_embeddings=len(embeddings))
 
         # Update chunks reference to use only valid chunks
         chunks = valid_chunks
@@ -703,19 +730,22 @@ class ChunkEmbeddingPipeline:
             # Extract page number from chunk (set by imported process_document function)
             page_number = getattr(chunk, 'page_number', 1)
 
-            # Truncate large text fields to prevent oversized JSONB payloads
-            # that cause asyncpg insertion failures
-            MAX_META_TEXT = 2000
             raw_page_content = page_content_cache.get(page_number, "")
             raw_full_content = getattr(chunk, 'full_content', '') or ''
+
+            if len(raw_page_content) > 10000:
+                logfire.warn("Large page_content in metadata — consider moving to a dedicated column",
+                             page_number=page_number,
+                             char_count=len(raw_page_content))
+
             chunk_metadata = {
                 'chunk_index': i,
                 'token_count': chunk.token_count,
                 'start_index': getattr(chunk, 'start_index', None),
                 'end_index': getattr(chunk, 'end_index', None),
                 'page_number': page_number,
-                'page_content': raw_page_content[:MAX_META_TEXT] if raw_page_content else "",
-                'full_content': raw_full_content[:MAX_META_TEXT] if raw_full_content else "",
+                'page_content': raw_page_content,
+                'full_content': raw_full_content,
                 'chunk_size': chunk_size,
                 'similarity_threshold': similarity_threshold,
                 'embedding_model': self.embedding_generator.model_name,
@@ -739,8 +769,27 @@ class ChunkEmbeddingPipeline:
             chunk_objects.append(chunk_obj)
 
         # Store in database using pgvector
+        logfire.info("Stage: inserting chunks into DB",
+                     num_chunks=len(chunk_objects),
+                     table_name=self.vector_store.table_name)
         print("Inserting chunks into database using pgvector...")
-        await self.vector_store.add_chunks(chunk_objects)
+        try:
+            await self.vector_store.add_chunks(chunk_objects)
+        except Exception as e:
+            tb = traceback.format_exc()
+            logfire.error(
+                "Stage FAILED: DB insertion",
+                num_chunks=len(chunk_objects),
+                table_name=self.vector_store.table_name,
+                error_type=type(e).__name__,
+                error=str(e),
+                traceback=tb,
+            )
+            print(f"[INSERT ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
+            raise
+        logfire.info("Stage: DB insertion complete",
+                     num_chunks=len(chunk_objects),
+                     document_id=document_id)
 
         print(
             f"Successfully processed {filename} -> Document ID: {document_id}")

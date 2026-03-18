@@ -4,6 +4,7 @@ FastAPI endpoints for upload, query, stats, health checks, and table management.
 """
 
 import uuid
+import traceback
 import logfire
 from pathlib import Path
 from typing import Optional
@@ -168,21 +169,35 @@ async def upload_and_process(
                      document_id=processed_id,
                      filename=file.filename)
 
+        table_count_result = await get_table_count(get_pipeline=get_pipeline)
+        current_table_count = table_count_result.get("table_count")
+
         return UploadResponse(
             status="success",
             document_id=processed_id,
             filename=file.filename,
             message="Document processed successfully.",
             chunks_created=None,
+            table_count=current_table_count,
             task_id=None
         )
 
     except HTTPException:
         raise  # Re-raise HTTP exceptions
     except Exception as e:
+        tb = traceback.format_exc()
+        logfire.error(
+            "Upload processing failed",
+            document_id=document_id,
+            filename=file.filename if file.filename else "unknown",
+            error_type=type(e).__name__,
+            error=str(e),
+            traceback=tb,
+        )
+        print(f"[UPLOAD ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Processing failed: {str(e)}"
+            detail=f"Processing failed: {type(e).__name__}: {e}"
         )
     finally:
         # Cleanup temporary file
@@ -293,6 +308,35 @@ async def query_documents_form(
 
         # Return error page using template
         return SEARCH_ERROR_HTML.format(error_message=error_msg)
+
+
+@router.get("/tables/count")
+async def get_table_count(get_pipeline=None):
+    """Return the number of chunk tables in the database."""
+    try:
+        pipeline = await get_pipeline(DEFAULT_TABLE_NAME)
+        conn = await pipeline.vector_store._get_connection()
+        try:
+            tables = await conn.fetch("""
+                SELECT DISTINCT t1.table_name
+                FROM information_schema.columns t1
+                WHERE t1.table_schema = 'public'
+                AND t1.column_name = 'document_id'
+                AND EXISTS (
+                    SELECT 1 FROM information_schema.columns t2
+                    WHERE t2.table_name = t1.table_name
+                    AND t2.table_schema = 'public'
+                    AND t2.column_name = 'embedding'
+                )
+                AND t1.table_name NOT IN ('entities', 'relationships', 'entity_nodes', 'entity_edges')
+                ORDER BY t1.table_name
+            """)
+            table_names = [row['table_name'] for row in tables]
+            return {"table_count": len(table_names), "table_names": table_names}
+        finally:
+            await conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to count tables: {str(e)}")
 
 
 @router.get("/tables")

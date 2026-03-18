@@ -73,6 +73,7 @@ from api.routes.document_routes import (
     upload_and_process,
     query_documents,
     query_documents_form,
+    get_table_count,
     list_tables,
     get_database_stats,
     health_check,
@@ -128,6 +129,7 @@ async def query_form_route(
     limit: int = Form(5),
     threshold: float = Form(0.3),
     table_name: str = Form(DEFAULT_TABLE_NAME),
+    model: str = Form("gemini-2.5-flash"),
     access_password: Optional[str] = Form(None),
 ):
     table_name = table_name.strip() or DEFAULT_TABLE_NAME
@@ -136,10 +138,16 @@ async def query_form_route(
         limit=limit,
         threshold=threshold,
         table_name=table_name,
+        model=model,
         access_password=access_password,
         config=config,
         get_pipeline=get_pipeline
     )
+
+
+@app.get("/tables/count")
+async def tables_count_route():
+    return await get_table_count(get_pipeline=get_pipeline)
 
 
 @app.get("/tables")
