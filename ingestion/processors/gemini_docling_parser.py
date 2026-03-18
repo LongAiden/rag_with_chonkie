@@ -316,7 +316,7 @@ class GeminiDoclingParser(PDFParserBase):
                 if pil is None:
                     logger.warning(f"  p{page_no}: PictureItem has no image, skipping")
                     continue
-                if self._min_image_px > 0 and (pil.width < self._min_image_px or pil.height < self._min_image_px):
+                if self._min_image_px > 0 and (pil.width < self._min_image_px and pil.height < self._min_image_px):
                     print(f"  p{page_no}: {label} too small ({pil.width}×{pil.height}px < {self._min_image_px}px), skipping VLM", flush=True)
                     continue
                 print(f"  p{page_no}: {label} ({pil.width}×{pil.height}px) → VLM", flush=True)

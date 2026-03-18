@@ -436,9 +436,9 @@ class VectorStore:
                     text,
                     metadata,
                     document_id,
-                    (1 - (embedding <=> $1)) as similarity
+                    (1 - (embedding <=> $1::vector)) as similarity
                 FROM {self.table_name}
-                WHERE (1 - (embedding <=> $1)) >= $2
+                WHERE (1 - (embedding <=> $1::vector)) >= $2
             """
 
             # Convert query embedding to proper pgvector format

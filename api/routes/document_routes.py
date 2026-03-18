@@ -169,7 +169,7 @@ async def upload_and_process(
                      document_id=processed_id,
                      filename=file.filename)
 
-        table_count_result = await get_table_count(get_pipeline=get_pipeline)
+        table_count_result = await get_table_count(pipeline=pipeline)
         current_table_count = table_count_result.get("table_count")
 
         return UploadResponse(
@@ -311,10 +311,11 @@ async def query_documents_form(
 
 
 @router.get("/tables/count")
-async def get_table_count(get_pipeline=None):
+async def get_table_count(get_pipeline=None, pipeline=None):
     """Return the number of chunk tables in the database."""
     try:
-        pipeline = await get_pipeline(DEFAULT_TABLE_NAME)
+        if pipeline is None:
+            pipeline = await get_pipeline()
         conn = await pipeline.vector_store._get_connection()
         try:
             tables = await conn.fetch("""

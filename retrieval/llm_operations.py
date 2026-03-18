@@ -3,6 +3,7 @@ LLM operations for the RAG application.
 Handles LLM-based response generation with fallback mechanisms.
 """
 
+import os
 import logfire
 
 from models.models import SimpleRAGResponse
@@ -15,10 +16,11 @@ class OllamaBackend:
 
     async def generate(self, query: str, context: str, results: list, _agent=None) -> SimpleRAGResponse:
         import httpx
+        ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434").rstrip("/")
         prompt = OLLAMA_RAG_PROMPT_TEMPLATE.format(context=context, query=query)
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
-                "http://localhost:11434/api/generate",
+                f"{ollama_base_url}/api/generate",
                 json={"model": self.model, "prompt": prompt, "stream": False}
             )
             resp.raise_for_status()
@@ -42,105 +44,77 @@ class OllamaBackend:
 class GeminiBackend:
     def __init__(self, model: str):
         self.model = model
+        self._agent = None  # lazy init
 
-    async def generate(self, query: str, context: str, results: list, agent) -> SimpleRAGResponse:
+    async def generate(self, query: str, context: str, results: list, _agent=None) -> SimpleRAGResponse:
+        import google.generativeai as genai
+
         sources_used = len(results)
 
-        with logfire.span("llm_response_generation",
-                         query=query[:100],
-                         sources_used=sources_used,
-                         context_length=len(context)):
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise RuntimeError("GOOGLE_API_KEY is not set")
 
-            logfire.info("Starting LLM response generation",
-                        query_length=len(query),
-                        context_length=len(context),
-                        sources_used=sources_used)
+        genai.configure(api_key=api_key)
 
-            try:
-                if agent is None:
-                    raise Exception(
-                        "Pydantic AI Agent is not configured - missing GOOGLE_API_KEY or configuration failed"
-                    )
+        # Build deduplicated context: one entry per unique (document, page).
+        seen_pages: dict = {}
+        for result in results:
+            meta = result.get('metadata') or {}
+            doc_id = result.get('document_id', '')
+            page_num = meta.get('page_number')
+            page_key = (doc_id, page_num if page_num is not None else 'full')
+            if page_key in seen_pages:
+                continue
+            content = (meta.get('full_content') or '').strip()
+            label = f"Page {page_num}" if page_num is not None else "Document"
+            seen_pages[page_key] = (label, content)
 
-                # Build deduplicated context: one entry per unique (document, page).
-                seen_pages: dict = {}
-                for result in results:
-                    meta = result.get('metadata') or {}
-                    doc_id = result.get('document_id', '')
-                    page_num = meta.get('page_number')
-                    page_key = (doc_id, page_num if page_num is not None else 'full')
-                    if page_key in seen_pages:
-                        continue
-                    content = (meta.get('full_content') or '').strip()
-                    label = f"Page {page_num}" if page_num is not None else "Document"
-                    seen_pages[page_key] = (label, content)
+        context_parts = [
+            f"[{label}]:\n{content}"
+            for label, content in seen_pages.values()
+            if content
+        ]
+        rich_context = "\n\n---\n\n".join(context_parts) or context
 
-                context_parts = [
-                    f"[{label}]:\n{content}"
-                    for label, content in seen_pages.values()
-                    if content
-                ]
-                rich_context = "\n\n---\n\n".join(context_parts) or context
+        prompt = f"""You are a RAG assistant. Answer the question using ONLY the provided sources.
+Cite sources and page numbers when available.
 
-                user_message = f"""Context from documents:
+Context:
 {rich_context}
 
-User Question: {query}
+Question: {query}
 
-Sources used: {sources_used}"""
+Answer:"""
 
-                response = await agent.run(user_message)
+        try:
+            model = genai.GenerativeModel(self.model)
+            response = model.generate_content(prompt)
+            answer = response.text
 
-                usage = response.usage()
-                input_tokens = usage.request_tokens
-                output_tokens = usage.response_tokens
-                total_tokens = usage.total_tokens
+            usage = response.usage_metadata
+            input_tokens = getattr(usage, 'prompt_token_count', None)
+            output_tokens = getattr(usage, 'candidates_token_count', None)
+            total_tokens = getattr(usage, 'total_token_count', None)
 
-                if hasattr(response, 'output') and isinstance(response.output, SimpleRAGResponse):
-                    if response.output.sources_used != sources_used:
-                        response.output.sources_used = sources_used
-                    response.output.input_tokens = input_tokens
-                    response.output.output_tokens = output_tokens
-                    response.output.total_tokens = total_tokens
+            logfire.info("Gemini response generated",
+                        model=self.model, input_tokens=input_tokens,
+                        output_tokens=output_tokens, sources_used=sources_used)
 
-                    logfire.info("LLM response generated successfully",
-                                word_count=response.output.word_count,
-                                confidence=response.output.confidence,
-                                input_tokens=input_tokens,
-                                output_tokens=output_tokens,
-                                total_tokens=total_tokens,
-                                method="pydantic_ai_agent")
-                    return response.output
-                else:
-                    answer_text = response.output if hasattr(response, 'output') else str(response)
-                    logfire.warn("Unexpected response structure, using fallback",
-                                response_type=type(response).__name__)
-                    return SimpleRAGResponse(
-                        answer=answer_text,
-                        confidence=0.8,
-                        word_count=len(answer_text.split()),
-                        sources_used=sources_used,
-                        metadata={"method": "pydantic_ai_agent_fallback", "model": self.model}
-                    )
-
-            except Exception as llm_error:
-                logfire.error("LLM generation failed, using fallback",
-                             error=str(llm_error),
-                             error_type=type(llm_error).__name__)
-                print(f"Pydantic AI Agent failed: {llm_error}")
-                fallback_answer = f"LLM generation failed ({str(llm_error)}), but found {len(results)} relevant chunks:\n\n"
-                for i, result in enumerate(results[:3]):
-                    fallback_answer += f"{i+1}. {result['text'][:300]}...\n\n"
-                return SimpleRAGResponse(
-                    answer=fallback_answer,
-                    confidence=0.3,
-                    word_count=len(fallback_answer.split()),
-                    sources_used=sources_used,
-                    metadata={
-                        "fallback_reason": str(llm_error),
-                        "method": "pydantic_ai_fallback"
-                    }
-                )
+            return SimpleRAGResponse(
+                answer=answer,
+                confidence=0.9,
+                word_count=len(answer.split()),
+                sources_used=sources_used,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                metadata={"method": "gemini", "model": self.model}
+            )
+        except Exception as llm_error:
+            logfire.error("Gemini generation failed", error=str(llm_error), model=self.model)
+            print(f"Gemini failed: {llm_error}", flush=True)
+            raise
 
 
 def _get_backend(model: str) -> OllamaBackend | GeminiBackend:
