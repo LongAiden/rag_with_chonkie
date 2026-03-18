@@ -162,7 +162,7 @@ async def stats_route():
 
 @app.get("/health", response_class=HTMLResponse)
 async def health_route():
-    return await health_check(get_pipeline=get_pipeline)
+    return await health_check(get_pipeline=get_pipeline, config=config)
 
 
 @app.get("/supported-types")

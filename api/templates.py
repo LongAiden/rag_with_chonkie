@@ -143,6 +143,8 @@ HOME_PAGE_HTML = """
         <select id="model-select" class="model-select" onchange="document.getElementById('model-hidden').value=this.value">
             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
             <option value="deepseek-r1:8b">DeepSeek R1 8B (Ollama)</option>
+            <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B (Ollama)</option>
+            <option value="llama3.2:3b">Llama 3.2 3B (Ollama)</option>
         </select>
         <form action="/query-form" method="post">
             <input type="hidden" name="model" id="model-hidden" value="gemini-2.5-flash">

@@ -23,7 +23,10 @@ class OllamaBackend:
                 f"{ollama_base_url}/api/generate",
                 json={"model": self.model, "prompt": prompt, "stream": False}
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                body = resp.text
+                print(f"Ollama error {resp.status_code}: {body}", flush=True)
+                resp.raise_for_status()
             data = resp.json()
             answer = data["response"]
             input_tokens = data.get("prompt_eval_count")

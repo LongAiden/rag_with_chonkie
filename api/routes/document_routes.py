@@ -491,10 +491,19 @@ async def get_database_stats(get_pipeline=None):
 
 
 @router.get("/health", response_class=HTMLResponse)
-async def health_check(get_pipeline=None):
+async def health_check(get_pipeline=None, config=None):
     """Health check endpoint to verify system status."""
     try:
-        pipeline = await get_pipeline(DEFAULT_TABLE_NAME)
+        # Reuse existing pipeline if available; don't create document_chunks on every health check
+        pipeline = None
+        if config is not None and config.pipeline is not None:
+            pipeline = config.pipeline
+        elif get_pipeline is not None:
+            pipeline = await get_pipeline(DEFAULT_TABLE_NAME)
+
+        if pipeline is None:
+            return HEALTH_ERROR_HTML.format(error_message="No pipeline initialized yet")
+
         stats = await pipeline.get_stats()
 
         # Check database connection
