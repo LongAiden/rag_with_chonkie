@@ -11,6 +11,7 @@ from PIL import Image as PILImage
 from ingestion.processors.gemini_docling_parser import (
     GeminiDoclingParser,
     _strip_code_fences,
+    _strip_stray_headers,
     _normalize_tables_in_markdown,
     _clean_html,
     _fix_table_closing_tags,
@@ -121,6 +122,7 @@ class OllamaPDFParser(GeminiDoclingParser):
             response.raise_for_status()
             raw = response.json()["response"]
             raw = _strip_code_fences(raw)
+            raw = _strip_stray_headers(raw)
             raw = _normalize_tables_in_markdown(raw)
             return raw
         except Exception as exc:

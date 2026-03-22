@@ -39,6 +39,8 @@ Rules:
 - If the image also contains a table, render it as a GFM markdown table.
 - ALL transcribed text must be placed inside the <figure>...</figure> block.
 - Output only the <figure>...</figure> block — no commentary or preamble.
+- Do NOT use markdown headings (#, ##, ###) anywhere in the output.
+- Do NOT write any text before <figure> or after </figure>.
 - Do NOT use code fences.
 """
 
@@ -47,24 +49,17 @@ Rules:
 OLLAMA_IMAGE_PROMPT = """\
 Look at this image from a PDF page.
 
-## 1. Examine the provided page carefully.
+Describe what you see inside <figure></figure> tags.
 
-* Identify all visible elements: headers, subheaders, paragraphs, tables, figures, images, charts, diagrams, captions, footnotes, and page numbers.
-
-## 2. Use proper Markdown syntax to format the output:
-
-* Headings: use #, ##, ### depending on hierarchy.
-* Lists: use - or * for bullet points; 1., 2., 3. for numbered lists.
-* Bold important labels (e.g., section names, column headers).
-* Avoid repeating identical content from previous pages.
-
-## 3. For images, charts, and diagrams (non-table elements):
-
-* If the image conveys structured or relational information (e.g., flowchart, process flow, organization chart), describe it clearly in text.
-* Classify each element using <figure_type>: one of Chart, Diagram, Logo, Screenshot, or Other.
-* Wrap each figure description or reconstructed table within <figure></figure> tags.
-* If the diagram shows directional flow (arrows, steps, or branches), describe the sequence explicitly (e.g., A → B → C).
-* Summarize each node or step briefly so the relationship is clear.
+Rules:
+- Start your output with <figure> and end with </figure>. Nothing outside these tags.
+- On the first line inside <figure>, add: <figure_type>Chart|Diagram|Logo|Screenshot|Other</figure_type>
+- Describe all visible content: axis labels, legend entries, data values, text annotations, flow steps.
+- If the image shows a flowchart or process: describe the sequence (A → B → C).
+- Do NOT use markdown headings (#, ##, ###) anywhere in the output.
+- Do NOT write any text, title, or commentary before <figure> or after </figure>.
+- Do NOT use code fences.
+Output only the <figure>...</figure> block.
 """
 
 OLLAMA_TABLE_PROMPT = """\

@@ -94,6 +94,23 @@ def _fix_table_closing_tags(md: str) -> str:
     return "\n".join(result)
 
 
+def _strip_stray_headers(md: str) -> str:
+    """Remove markdown heading lines that appear outside <figure> or <table> blocks."""
+    lines, result, inside = md.splitlines(), [], False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('<figure') or stripped.startswith('<table'):
+            inside = True
+        if stripped.startswith('</figure>') or stripped.startswith('</table>'):
+            result.append(line)
+            inside = False
+            continue
+        if not inside and re.match(r'^#{1,6}\s', stripped):
+            continue
+        result.append(line)
+    return '\n'.join(result)
+
+
 def _normalize_tables_in_markdown(md: str) -> str:
     out, buf = [], []
 
@@ -205,6 +222,7 @@ class GeminiDoclingParser(PDFParserBase):
     def _call_vlm(self, pil_img: PILImage.Image, prompt: str) -> str:
         raw = self._call_gemini(pil_img, prompt)
         raw = _strip_code_fences(raw)
+        raw = _strip_stray_headers(raw)
         raw = _normalize_tables_in_markdown(raw)
         return raw
 
