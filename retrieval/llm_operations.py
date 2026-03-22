@@ -134,4 +134,5 @@ async def generate_llm_response(
     model: str = "gemini-2.5-flash",
 ) -> SimpleRAGResponse:
     backend = _get_backend(model)
+    logfire.info("LLM request", model=model, backend=type(backend).__name__, results_count=len(results))
     return await backend.generate(query, context, results, agent)

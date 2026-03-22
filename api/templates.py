@@ -16,22 +16,42 @@ HOME_PAGE_HTML = """
         .section {
             margin: 30px 0;
             padding: 25px;
-            background: white;
+            background: rgba(255, 255, 255, 0.32);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.44);
+            border-top: 2px solid rgba(59, 130, 246, 0.65);
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         input, textarea {
-            margin: 10px 0;
-            padding: 12px;
+            margin: 0;
+            padding: 10px 12px;
             width: 100%;
             box-sizing: border-box;
-            border: 2px solid #e9ecef;
-            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.40);
+            border-radius: 8px;
             font-size: 14px;
+            background: rgba(255, 255, 255, 0.88);
+            color: #1a1a2e;
         }
         input:focus, textarea:focus {
             outline: none;
-            border-color: #007bff;
+            border-color: rgba(255, 255, 255, 0.80);
+            background: rgba(255, 255, 255, 0.96);
+        }
+        input::placeholder, textarea::placeholder {
+            color: #888;
+        }
+        .form-group {
+            margin: 12px 0;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.80);
+            margin-bottom: 5px;
+            letter-spacing: 0.02em;
         }
         button {
             background: linear-gradient(135deg, #007bff, #0056b3);
@@ -53,8 +73,27 @@ HOME_PAGE_HTML = """
             border-radius: 8px;
             margin: 20px 0;
         }
-        h1 { color: #2c3e50; }
-        h2 { color: #34495e; margin-bottom: 15px; }
+        h1 { color: #ffffff; text-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+        h2 { color: #ffffff; text-shadow: 0 1px 4px rgba(0,0,0,0.35); margin-bottom: 15px; border-left: 3px solid #3b82f6; padding-left: 10px; }
+        .section > p { color: rgba(255, 255, 255, 0.88); }
+        .hero-card {
+            background: rgba(255, 255, 255, 0.24);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.40);
+            border-top: 3px solid #3b82f6;
+            border-radius: 16px;
+            padding: 24px 32px;
+            margin-bottom: 24px;
+        }
+        .hero-card .stats {
+            background: transparent;
+            color: rgba(255, 255, 255, 0.9);
+            padding: 10px 0 0 0;
+            margin: 0;
+            border: none;
+        }
+        .hero-card .stats strong { color: white; }
 
         /* Success notification styles */
         .notification {
@@ -99,42 +138,42 @@ HOME_PAGE_HTML = """
             padding: 12px 28px;
             border: none;
             border-radius: 10px 10px 0 0;
-            background: #dee2e6;
-            color: #495057;
+            background: rgba(255, 255, 255, 0.40);
+            color: rgba(255, 255, 255, 0.80);
             cursor: pointer;
             font-weight: 600;
             font-size: 15px;
             transition: background 0.2s, color 0.2s;
         }
         .tab-btn.active {
-            background: white;
-            color: #007bff;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background: rgba(59, 130, 246, 0.22);
+            color: #e0f0ff;
         }
         .tab-panel { display: none; }
         .tab-panel.active { display: block; }
         .model-select {
-            margin: 10px 0;
+            margin: 0;
             padding: 10px 12px;
             width: 100%;
             box-sizing: border-box;
-            border: 2px solid #e9ecef;
-            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.40);
+            border-radius: 8px;
             font-size: 14px;
-            background: white;
+            background: rgba(255, 255, 255, 0.88);
+            color: #1a1a2e;
             cursor: pointer;
         }
-        .model-select:focus { outline: none; border-color: #007bff; }
+        .model-select:focus { outline: none; border-color: rgba(255,255,255,0.80); }
 
         /* Chat UI */
         #chat-messages {
             height: 480px;
             overflow-y: auto;
-            display: flex;
+            display: none;
             flex-direction: column;
             gap: 12px;
             padding: 16px;
-            background: #f8f9fa;
+            background: rgba(59, 130, 246, 0.12);
             border-radius: 8px;
             margin-bottom: 12px;
         }
@@ -211,40 +250,52 @@ HOME_PAGE_HTML = """
             color: #721c24;
             font-size: 13px;
         }
-        #chat-input-bar { display: flex; gap: 8px; align-items: flex-end; }
+        #chat-input-bar { display: flex; gap: 8px; align-items: stretch; }
         #chat-input { flex: 1; margin: 0; resize: none; min-height: 44px; max-height: 120px; }
-        #chat-send { white-space: nowrap; padding: 12px 20px; flex-shrink: 0; }
+        #chat-send { white-space: nowrap; padding: 0 20px; flex-shrink: 0; align-self: stretch; }
         .settings-toggle {
-            background: none;
-            border: 1px solid #dee2e6;
-            color: #495057;
+            background: rgba(255, 255, 255, 0.28);
+            border: 1px solid rgba(59, 130, 246, 0.45);
+            color: rgba(255, 255, 255, 0.90);
             padding: 8px 14px;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            backdrop-filter: blur(4px);
         }
-        .settings-toggle:hover { background: #f8f9fa; transform: none; box-shadow: none; }
+        .settings-toggle:hover { background: rgba(255,255,255,0.40); transform: none; box-shadow: none; }
         #settings-panel {
             display: none;
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
+            background: rgba(255, 255, 255, 0.34);
+            border: 1px solid rgba(255, 255, 255, 0.30);
             border-radius: 8px;
             padding: 14px;
             margin-bottom: 12px;
             font-size: 13px;
         }
-        #settings-panel label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 500; color: #495057; }
+        #settings-panel label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 500; color: rgba(255,255,255,0.90); }
         #settings-panel input[type="number"],
-        #settings-panel input[type="password"] { margin: 0; padding: 6px 10px; font-size: 13px; width: auto; }
-        #settings-panel .model-select { margin: 0; padding: 6px 10px; font-size: 13px; }
+        #settings-panel input[type="password"] { padding: 6px 10px; font-size: 13px; width: auto; }
+        #settings-panel .model-select { padding: 6px 10px; font-size: 13px; }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.45);
+            color: rgba(255,255,255,0.85);
+            padding: 9px 18px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .btn-outline:hover { background: rgba(255,255,255,0.28); transform: none; box-shadow: none; }
     </style>
 </head>
 <body>
-    <h1>🚀 pgvector RAG System</h1>
-    <div class="stats">
-        <strong>Powered by:</strong> PostgreSQL + pgvector for high-performance similarity search
+    <div class="hero-card">
+        <h1>🚀 pgvector RAG System</h1>
+        <div class="stats">
+            <strong>Powered by:</strong> PostgreSQL + pgvector for high-performance similarity search
+        </div>
     </div>
 
     <div class="tab-bar">
@@ -266,7 +317,7 @@ HOME_PAGE_HTML = """
                 </select>
             </label>
             <label>Max Results: <input type="number" id="chat-limit" value="5" min="1" max="100" style="width:70px;"></label>
-            <label>Threshold: <input type="number" id="chat-threshold" value="0.3" min="0.0" max="0.95" step="0.05" style="width:80px;"></label>
+            <label>Threshold: <input type="number" id="chat-threshold" value="0.5" min="0.0" max="0.95" step="0.05" style="width:80px;"></label>
             <label>Table:
                 <select id="chat-table" class="model-select" style="margin:0;padding:6px 10px;font-size:13px;">
                     <option value="document_chunks">document_chunks (loading...)</option>
@@ -279,9 +330,10 @@ HOME_PAGE_HTML = """
             <textarea id="chat-input" placeholder="Ask a question about your documents... (Ctrl+Enter to send)" rows="2"></textarea>
             <button id="chat-send" onclick="sendChat()">Send</button>
         </div>
-        <div style="margin-top: 20px;">
-            <a href="/stats" target="_blank"><button type="button">View Database Statistics</button></a>
-            <a href="/health" target="_blank"><button type="button">Health Check</button></a>
+        <div style="margin-top: 20px; display: flex; gap: 10px;">
+            <button type="button" class="btn-outline" onclick="clearChat()">🗑️ Clear</button>
+            <a href="/stats" target="_blank"><button type="button" class="btn-outline">📊 Statistics</button></a>
+            <a href="/health" target="_blank"><button type="button" class="btn-outline">🏥 Health</button></a>
         </div>
     </div>
 
@@ -289,22 +341,33 @@ HOME_PAGE_HTML = """
         <h2>📤 Upload & Process Document</h2>
         <p>Supported formats: PDF, DOCX, TXT. Documents are chunked semantically and stored with vector embeddings.</p>
         <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".pdf,.docx,.txt" required>
-            <br>
-            <label>PDF Parsing Backend:</label>
-            <select name="parse_backend" class="model-select">
-                <option value="">Default (PyMuPDF only)</option>
-                <option value="gemini-docling">Gemini Vision (docling)</option>
-                <option value="ollama">Local LLM — qwen3.5:4b (Ollama)</option>
-            </select>
-            <br>
-            <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
-            <br>
-            <label>Table Name: <input type="text" name="table_name" value="document_chunks"></label>
-            <br>
-            <label>Chunk Size: <input type="number" name="chunk_size" value="512" min="128" max="2048"></label>
-            <br>
-            <button type="submit">Upload & Process</button>
+            <div class="form-group">
+                <label>Document File</label>
+                <input type="file" name="file" accept=".pdf,.docx,.txt" required>
+            </div>
+            <div class="form-group">
+                <label>PDF Parsing Backend</label>
+                <select name="parse_backend" class="model-select">
+                    <option value="">Default (PyMuPDF only)</option>
+                    <option value="gemini-docling">Gemini Vision (docling)</option>
+                    <option value="ollama">Local LLM — qwen3.5:4b (Ollama)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Access Password</label>
+                <input type="password" name="access_password" placeholder="Required if configured">
+            </div>
+            <div class="form-group">
+                <label>Table Name</label>
+                <input type="text" name="table_name" value="document_chunks">
+            </div>
+            <div class="form-group">
+                <label>Chunk Size</label>
+                <input type="number" name="chunk_size" value="512" min="128" max="2048">
+            </div>
+            <div style="margin-top: 18px;">
+                <button type="submit">📤 Upload & Process</button>
+            </div>
         </form>
     </div>
 
@@ -453,8 +516,15 @@ HOME_PAGE_HTML = """
                 .replace(/"/g, '&quot;');
         }
 
+        function clearChat() {
+            const messages = document.getElementById('chat-messages');
+            messages.innerHTML = '';
+            messages.style.display = 'none';
+        }
+
         function appendBubble(html, className) {
             const messages = document.getElementById('chat-messages');
+            messages.style.display = 'flex';
             const div = document.createElement('div');
             div.className = className;
             div.innerHTML = html;
@@ -470,7 +540,7 @@ HOME_PAGE_HTML = """
 
             const model = document.getElementById('chat-model').value;
             const limit = parseInt(document.getElementById('chat-limit').value) || 5;
-            const threshold = parseFloat(document.getElementById('chat-threshold').value) || 0.3;
+            const threshold = parseFloat(document.getElementById('chat-threshold').value) || 0.5;
             const table_name = document.getElementById('chat-table').value || 'document_chunks';
             const password = document.getElementById('chat-password').value || loadPassword();
             if (password) savePassword(password);
@@ -532,8 +602,14 @@ HOME_PAGE_HTML = """
                     ? `<div class="token-line">🪙 &uarr;&nbsp;${inTok != null ? inTok.toLocaleString() : '?'} in &nbsp;&middot;&nbsp; &darr;&nbsp;${outTok != null ? outTok.toLocaleString() : '?'} out &nbsp;&middot;&nbsp; &Sigma;&nbsp;${totalTok.toLocaleString()} total</div>`
                     : '';
 
+                // Search stats line
+                const chunksFound = stats.chunks_found != null ? stats.chunks_found : '?';
+                const searchMethod = stats.search_method || '?';
+                const tableUsed = data.table_used || '?';
+                const statsLine = `<div class="token-line">🔍 ${chunksFound} chunks &nbsp;&middot;&nbsp; 📋 ${escapeHtml(tableUsed)} &nbsp;&middot;&nbsp; ⚙️ ${escapeHtml(searchMethod)}</div>`;
+
                 appendBubble(
-                    `<div class="ai-answer-text">${escapeHtml(data.answer || '')}</div>${sourcesHtml}${tokenLine}`,
+                    `<div class="ai-answer-text">${escapeHtml(data.answer || '')}</div>${sourcesHtml}${statsLine}${tokenLine}`,
                     'ai-bubble'
                 );
             } catch (err) {
@@ -754,14 +830,19 @@ STATS_PAGE_HTML = """
             max-width: 900px;
             margin: 50px auto;
             padding: 20px;
-            background: #f8f9fa;
+            background:
+                linear-gradient(rgba(10, 20, 35, 0.50), rgba(10, 20, 35, 0.50)),
+                url('/images/moutain_pexcel.jpeg') center center / cover fixed;
             line-height: 1.6;
         }}
         .header {{
-            background: white;
+            background: rgba(255, 255, 255, 0.24);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.40);
+            border-top: 3px solid #3b82f6;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 20px;
             text-align: center;
         }}
@@ -772,29 +853,36 @@ STATS_PAGE_HTML = """
             margin-bottom: 20px;
         }}
         .stat-card {{
-            background: white;
+            background: rgba(255, 255, 255, 0.32);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.44);
+            border-top: 2px solid rgba(59, 130, 246, 0.65);
             padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             text-align: center;
         }}
         .stat-number {{
             font-size: 2.5rem;
             font-weight: bold;
-            color: #007bff;
+            color: #22d3ee;
+            text-shadow: 0 0 14px rgba(34, 211, 238, 0.7);
             margin-bottom: 10px;
         }}
         .stat-label {{
-            color: #666;
+            color: #ffffff;
             font-size: 0.9rem;
             text-transform: uppercase;
             letter-spacing: 1px;
         }}
         .config-section {{
-            background: white;
+            background: rgba(255, 255, 255, 0.32);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.44);
+            border-top: 2px solid rgba(59, 130, 246, 0.65);
             padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 20px;
         }}
         .config-item {{
@@ -808,10 +896,11 @@ STATS_PAGE_HTML = """
         }}
         .config-label {{
             font-weight: 600;
-            color: #333;
+            color: rgba(255, 255, 255, 0.85);
         }}
         .config-value {{
-            color: #007bff;
+            color: #7dd3fc;
+            text-shadow: 0 0 8px rgba(125, 211, 252, 0.5);
             font-family: 'Courier New', monospace;
         }}
         button {{
@@ -825,15 +914,17 @@ STATS_PAGE_HTML = """
             text-decoration: none;
             display: inline-block;
         }}
-        h1 {{ color: #2c3e50; margin-bottom: 10px; }}
-        h2 {{ color: #34495e; margin-bottom: 15px; }}
+        h1 {{ color: #ffffff; text-shadow: 0 2px 8px rgba(0,0,0,0.4); margin-bottom: 10px; }}
+        h2 {{ color: #ffffff; text-shadow: 0 1px 4px rgba(0,0,0,0.35); margin-bottom: 15px; border-left: 3px solid #3b82f6; padding-left: 10px; }}
+        .stat-label {{ color: #ffffff; }}
         .refresh-note {{
-            background: #e3f2fd;
+            background: rgba(227, 242, 253, 0.15);
+            border: 1px solid rgba(255,255,255,0.20);
             padding: 15px;
             border-radius: 8px;
             margin-top: 20px;
             font-size: 14px;
-            color: #666;
+            color: rgba(255,255,255,0.75);
         }}
     </style>
 </head>
@@ -869,14 +960,6 @@ STATS_PAGE_HTML = """
 
     <div class="config-section">
         <h2>⚙️ System Configuration</h2>
-        <div class="config-item">
-            <span class="config-label">Embedding Model</span>
-            <span class="config-value">{embedding_model}</span>
-        </div>
-        <div class="config-item">
-            <span class="config-label">Embedding Dimensions</span>
-            <span class="config-value">{embedding_dim}</span>
-        </div>
         <div class="config-item">
             <span class="config-label">Active Table</span>
             <span class="config-value">{table_name}</span>
@@ -942,25 +1025,32 @@ HEALTH_CHECK_HTML = """
             max-width: 800px;
             margin: 50px auto;
             padding: 20px;
-            background: #f8f9fa;
+            background:
+                linear-gradient(rgba(10, 20, 35, 0.50), rgba(10, 20, 35, 0.50)),
+                url('/images/moutain_pexcel.jpeg') center center / cover fixed;
             line-height: 1.6;
         }}
         .header {{
-            background: white;
+            background: rgba(255, 255, 255, 0.24);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.40);
+            border-top: 3px solid #3b82f6;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 20px;
             text-align: center;
         }}
         .status-main {{
-            background: white;
+            background: rgba(255, 255, 255, 0.32);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.44);
+            border-left: 6px solid {status_color};
             padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 20px;
             text-align: center;
-            border-left: 6px solid {status_color};
         }}
         .status-icon {{
             font-size: 4rem;
@@ -970,6 +1060,7 @@ HEALTH_CHECK_HTML = """
             font-size: 1.5rem;
             font-weight: bold;
             color: {status_color};
+            text-shadow: 0 0 12px {status_color};
             text-transform: uppercase;
             letter-spacing: 2px;
         }}
@@ -980,10 +1071,13 @@ HEALTH_CHECK_HTML = """
             margin-bottom: 20px;
         }}
         .component-card {{
-            background: white;
+            background: rgba(255, 255, 255, 0.32);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.44);
+            border-top: 2px solid rgba(59, 130, 246, 0.65);
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             text-align: center;
         }}
         .component-status {{
@@ -992,18 +1086,21 @@ HEALTH_CHECK_HTML = """
         }}
         .component-name {{
             font-weight: 600;
-            color: #333;
+            color: rgba(255, 255, 255, 0.95);
             margin-bottom: 5px;
         }}
         .component-detail {{
-            color: #666;
+            color: #ffffff;
             font-size: 0.9rem;
         }}
         .metrics-section {{
-            background: white;
+            background: rgba(255, 255, 255, 0.32);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.44);
+            border-top: 2px solid rgba(59, 130, 246, 0.65);
             padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 20px;
         }}
         .metrics-grid {{
@@ -1014,17 +1111,18 @@ HEALTH_CHECK_HTML = """
         .metric-item {{
             text-align: center;
             padding: 15px;
-            background: #f8f9fa;
+            background: rgba(255, 255, 255, 0.34);
             border-radius: 8px;
         }}
         .metric-number {{
             font-size: 1.8rem;
             font-weight: bold;
-            color: #007bff;
+            color: #22d3ee;
+            text-shadow: 0 0 14px rgba(34, 211, 238, 0.7);
             margin-bottom: 5px;
         }}
         .metric-label {{
-            color: #666;
+            color: #ffffff;
             font-size: 0.85rem;
             text-transform: uppercase;
         }}
@@ -1040,23 +1138,18 @@ HEALTH_CHECK_HTML = """
             display: inline-block;
             margin: 5px;
         }}
-        h1 {{ color: #2c3e50; margin-bottom: 10px; }}
-        h2 {{ color: #34495e; margin-bottom: 15px; }}
+        h1 {{ color: #ffffff; text-shadow: 0 2px 8px rgba(0,0,0,0.4); margin-bottom: 10px; }}
+        h2 {{ color: #ffffff; text-shadow: 0 1px 4px rgba(0,0,0,0.35); margin-bottom: 15px; border-left: 3px solid #3b82f6; padding-left: 10px; }}
         .timestamp {{
-            background: #e3f2fd;
+            background: rgba(227, 242, 253, 0.15);
+            border: 1px solid rgba(255,255,255,0.20);
             padding: 15px;
             border-radius: 8px;
             font-size: 14px;
-            color: #666;
+            color: rgba(255,255,255,0.75);
             text-align: center;
         }}
     </style>
-    <script>
-        // Auto-refresh every 30 seconds
-        setTimeout(() => {{
-            location.reload();
-        }}, 30000);
-    </script>
 </head>
 <body>
     <div class="header">
@@ -1076,24 +1169,19 @@ HEALTH_CHECK_HTML = """
             <div class="component-status">🗄️</div>
             <div class="component-name">Database</div>
             <div class="component-detail">PostgreSQL + pgvector</div>
-            <div class="component-detail" style="color: {status_color}; font-weight: bold;">{db_status_upper}</div>
+            <div class="component-detail" style="color: {status_color}; font-weight: bold; text-shadow: 0 0 8px {status_color};">{db_status_upper}</div>
         </div>
         <div class="component-card">
             <div class="component-status">🧠</div>
             <div class="component-name">Embedding Model</div>
             <div class="component-detail">{embedding_model}</div>
-            <div class="component-detail" style="color: #28a745; font-weight: bold;">LOADED</div>
+            <div class="component-detail" style="color: #4ade80; font-weight: bold; text-shadow: 0 0 8px rgba(74,222,128,0.55);">LOADED</div>
         </div>
         <div class="component-card">
             <div class="component-status">🔍</div>
             <div class="component-name">Vector Store</div>
             <div class="component-detail">Table: {table_name}</div>
-            <div class="component-detail" style="color: #28a745; font-weight: bold;">OPERATIONAL</div>
-        </div>
-        <div class="component-card">
-            <div class="component-status">🤖</div>
-            <div class="component-name">LLM Service</div>
-            <div class="component-detail">Gemini 2.5 Flash</div>
+            <div class="component-detail" style="color: #4ade80; font-weight: bold; text-shadow: 0 0 8px rgba(74,222,128,0.55);">OPERATIONAL</div>
         </div>
     </div>
 

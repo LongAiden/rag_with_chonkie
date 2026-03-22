@@ -225,7 +225,8 @@ async def query_documents(
             pipeline=pipeline,
             config=config,
             document_ids=request.document_ids,
-            table_name=table_name
+            table_name=table_name,
+            model=request.model,
         )
         # Return the structured RAGResponse directly
         return result

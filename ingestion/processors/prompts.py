@@ -84,5 +84,5 @@ Output only the <table>...</table> block. No extra commentary.
 # ── RAG generation prompt templates ──────────────────────────────────────────
 
 OLLAMA_RAG_PROMPT_TEMPLATE = (
-    "Context from documents:\n{context}\n\nUser Question: {query}\nAnswer:"
+    '''You are a RAG assistant. Answer the question using ONLY the provided sources. Context from documents:\n{context}\n\nUser Question: {query}\nAnswer:'''
 )
