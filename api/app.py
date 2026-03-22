@@ -16,6 +16,7 @@ from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, Form, Header
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from api.config import AppConfig, DEFAULT_TABLE_NAME, DEFAULT_EMBEDDING_MODEL
 from ingestion.embedding.vector_store import ChunkEmbeddingPipeline
@@ -23,6 +24,7 @@ from models.models import QueryRequest, UploadResponse, RAGResponse
 
 # Initialize FastAPI application
 app = FastAPI(title="pgvector RAG API", version="1.0.0")
+app.mount("/images", StaticFiles(directory="images"), name="images")
 
 # Global configuration
 config = AppConfig()

@@ -216,7 +216,8 @@ async def query_documents(
     """Query documents using pgvector similarity search + LLM generation with optional reranking."""
     require_access_password(x_app_password)
     try:
-        pipeline = await get_pipeline(DEFAULT_TABLE_NAME)
+        table_name = (request.table_name or DEFAULT_TABLE_NAME).strip()
+        pipeline = await get_pipeline(table_name)
         result = await perform_document_search(
             query=request.query,
             limit=request.limit,
@@ -224,7 +225,7 @@ async def query_documents(
             pipeline=pipeline,
             config=config,
             document_ids=request.document_ids,
-            table_name=DEFAULT_TABLE_NAME
+            table_name=table_name
         )
         # Return the structured RAGResponse directly
         return result

@@ -9,7 +9,9 @@ HOME_PAGE_HTML = """
             max-width: 800px;
             margin: 50px auto;
             padding: 20px;
-            background: #f8f9fa;
+            background:
+                linear-gradient(rgba(10, 20, 35, 0.50), rgba(10, 20, 35, 0.50)),
+                url('/images/moutain_pexcel.jpeg') center center / cover fixed;
         }
         .section {
             margin: 30px 0;
@@ -123,6 +125,120 @@ HOME_PAGE_HTML = """
             cursor: pointer;
         }
         .model-select:focus { outline: none; border-color: #007bff; }
+
+        /* Chat UI */
+        #chat-messages {
+            height: 480px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .user-bubble {
+            align-self: flex-end;
+            max-width: 75%;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 18px 18px 4px 18px;
+            font-size: 14px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+        .ai-bubble {
+            align-self: flex-start;
+            max-width: 88%;
+            background: white;
+            border: 1px solid #e9ecef;
+            padding: 16px;
+            border-radius: 4px 18px 18px 18px;
+            font-size: 14px;
+            line-height: 1.6;
+            word-wrap: break-word;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+        }
+        .ai-answer-text { white-space: pre-wrap; margin-bottom: 12px; }
+        .sources-section { border-top: 1px solid #e9ecef; padding-top: 10px; margin-top: 8px; }
+        .sources-header { font-weight: 600; font-size: 13px; color: #495057; margin-bottom: 8px; }
+        .source-item {
+            background: #f8f9fa;
+            border-left: 3px solid #007bff;
+            padding: 8px 10px;
+            margin: 6px 0;
+            border-radius: 0 4px 4px 0;
+            font-size: 12px;
+            color: #555;
+        }
+        .source-meta { font-weight: 600; color: #333; margin-bottom: 3px; }
+        .source-text {
+            color: #666;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            white-space: pre-wrap;
+        }
+        .token-line {
+            border-top: 1px solid #e9ecef;
+            padding-top: 8px;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #888;
+            font-family: 'Courier New', monospace;
+        }
+        .loading-bubble {
+            align-self: flex-start;
+            background: white;
+            border: 1px solid #e9ecef;
+            padding: 12px 16px;
+            border-radius: 4px 18px 18px 18px;
+            color: #888;
+            font-size: 13px;
+            font-style: italic;
+        }
+        .error-bubble {
+            align-self: flex-start;
+            max-width: 85%;
+            background: #fff5f5;
+            border: 1px solid #f5c6cb;
+            padding: 12px 16px;
+            border-radius: 4px 18px 18px 18px;
+            color: #721c24;
+            font-size: 13px;
+        }
+        #chat-input-bar { display: flex; gap: 8px; align-items: flex-end; }
+        #chat-input { flex: 1; margin: 0; resize: none; min-height: 44px; max-height: 120px; }
+        #chat-send { white-space: nowrap; padding: 12px 20px; flex-shrink: 0; }
+        .settings-toggle {
+            background: none;
+            border: 1px solid #dee2e6;
+            color: #495057;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .settings-toggle:hover { background: #f8f9fa; transform: none; box-shadow: none; }
+        #settings-panel {
+            display: none;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+        #settings-panel label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 500; color: #495057; }
+        #settings-panel input[type="number"],
+        #settings-panel input[type="password"] { margin: 0; padding: 6px 10px; font-size: 13px; width: auto; }
+        #settings-panel .model-select { margin: 0; padding: 6px 10px; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -137,28 +253,32 @@ HOME_PAGE_HTML = """
     </div>
 
     <div id="tab-chat" class="tab-panel active section">
-        <h2>🔍 Query Documents</h2>
+        <h2>💬 Chat</h2>
         <p>Semantic search powered by sentence embeddings and pgvector cosine similarity.</p>
-        <label>Model:</label>
-        <select id="model-select" class="model-select" onchange="document.getElementById('model-hidden').value=this.value">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="deepseek-r1:8b">DeepSeek R1 8B (Ollama)</option>
-            <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B (Ollama)</option>
-            <option value="llama3.2:3b">Llama 3.2 3B (Ollama)</option>
-        </select>
-        <form action="/query-form" method="post">
-            <input type="hidden" name="model" id="model-hidden" value="gemini-2.5-flash">
-            <textarea name="query" placeholder="Ask a question about your documents..." required rows="3"></textarea>
-            <br>
-            <label>Access Password: <input type="password" name="access_password" placeholder="Required if configured"></label>
-            <br>
-            <label>Table Name: <input type="text" name="table_name" value="document_chunks"></label>
-            <br>
-            <label>Max Results: <input type="number" name="limit" value="5" min="1" max="100" style="width: 80px;"></label>
-            <label>Similarity Threshold: <input type="number" name="threshold" value="0.3" min="0.0" max="0.95" step="0.05" style="width: 80px;"></label>
-            <br>
-            <button type="submit">Search</button>
-        </form>
+        <button class="settings-toggle" onclick="toggleSettings()">⚙️ Settings ▾</button>
+        <div id="settings-panel">
+            <label>Model:
+                <select id="chat-model" class="model-select">
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                    <option value="deepseek-r1:8b">DeepSeek R1 8B (Ollama)</option>
+                    <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B (Ollama)</option>
+                    <option value="llama3.2:3b">Llama 3.2 3B (Ollama)</option>
+                </select>
+            </label>
+            <label>Max Results: <input type="number" id="chat-limit" value="5" min="1" max="100" style="width:70px;"></label>
+            <label>Threshold: <input type="number" id="chat-threshold" value="0.3" min="0.0" max="0.95" step="0.05" style="width:80px;"></label>
+            <label>Table:
+                <select id="chat-table" class="model-select" style="margin:0;padding:6px 10px;font-size:13px;">
+                    <option value="document_chunks">document_chunks (loading...)</option>
+                </select>
+            </label>
+            <label>Password: <input type="password" id="chat-password" placeholder="Required if configured"></label>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input-bar">
+            <textarea id="chat-input" placeholder="Ask a question about your documents... (Ctrl+Enter to send)" rows="2"></textarea>
+            <button id="chat-send" onclick="sendChat()">Send</button>
+        </div>
         <div style="margin-top: 20px;">
             <a href="/stats" target="_blank"><button type="button">View Database Statistics</button></a>
             <a href="/health" target="_blank"><button type="button">Health Check</button></a>
@@ -299,12 +419,6 @@ HOME_PAGE_HTML = """
             }
         });
 
-        // Ensure password is cached on query form submissions
-        document.querySelector('form[action="/query-form"]').addEventListener('submit', function() {
-            cachePasswordFromForm(this);
-            hydratePasswordInputs();
-        });
-
         // Check for URL parameters to show notifications (if redirected)
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('upload') === 'success') {
@@ -312,6 +426,154 @@ HOME_PAGE_HTML = """
         } else if (urlParams.get('upload') === 'error') {
             showNotification('Upload failed. Please try again.', 'error');
         }
+
+        // ── Chat UI ──────────────────────────────────────────────────────────
+
+        function toggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            const btn = document.querySelector('.settings-toggle');
+            if (panel.style.display === 'block') {
+                panel.style.display = 'none';
+                btn.textContent = '⚙️ Settings ▾';
+            } else {
+                panel.style.display = 'block';
+                btn.textContent = '⚙️ Settings ▴';
+                const saved = loadPassword();
+                if (saved && !document.getElementById('chat-password').value) {
+                    document.getElementById('chat-password').value = saved;
+                }
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function appendBubble(html, className) {
+            const messages = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = className;
+            div.innerHTML = html;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+            return div;
+        }
+
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const query = input.value.trim();
+            if (!query) return;
+
+            const model = document.getElementById('chat-model').value;
+            const limit = parseInt(document.getElementById('chat-limit').value) || 5;
+            const threshold = parseFloat(document.getElementById('chat-threshold').value) || 0.3;
+            const table_name = document.getElementById('chat-table').value || 'document_chunks';
+            const password = document.getElementById('chat-password').value || loadPassword();
+            if (password) savePassword(password);
+
+            input.value = '';
+            input.style.height = 'auto';
+            const sendBtn = document.getElementById('chat-send');
+            sendBtn.disabled = true;
+            sendBtn.textContent = '...';
+
+            appendBubble(escapeHtml(query), 'user-bubble');
+            const loadingBubble = appendBubble('🤔 Thinking...', 'loading-bubble');
+
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (password) headers['x-app-password'] = password;
+
+                const res = await fetch('/query', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ query, limit, threshold, model, table_name })
+                });
+
+                loadingBubble.remove();
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: res.statusText }));
+                    appendBubble(`<strong>Error:</strong> ${escapeHtml(err.detail || 'Unknown error')}`, 'error-bubble');
+                    return;
+                }
+
+                const data = await res.json();
+                const stats = data.search_stats || {};
+
+                // Build sources HTML
+                let sourcesHtml = '';
+                if (data.sources && data.sources.length > 0) {
+                    const items = data.sources.map((s, i) => {
+                        const sim = (s.similarity * 100).toFixed(1);
+                        const rerank = s.rerank_score != null ? ` &nbsp;·&nbsp; BM25: ${s.rerank_score.toFixed(3)}` : '';
+                        const docId = s.document_id ? s.document_id.substring(0, 8) + '...' : 'N/A';
+                        const page = s.page_number != null ? ` &nbsp;·&nbsp; Page ${s.page_number}` : '';
+                        return `<div class="source-item">
+                            <div class="source-meta">Source ${i + 1} &mdash; ${sim}% similarity${rerank} &nbsp;|&nbsp; Doc: ${escapeHtml(docId)}${page}</div>
+                            <div class="source-text">${escapeHtml(s.text)}</div>
+                        </div>`;
+                    }).join('');
+                    sourcesHtml = `<div class="sources-section">
+                        <div class="sources-header">📚 Sources (${data.sources.length})</div>
+                        ${items}
+                    </div>`;
+                }
+
+                // Token line
+                const inTok = stats.input_tokens;
+                const outTok = stats.output_tokens;
+                const totalTok = stats.total_tokens;
+                const tokenLine = totalTok
+                    ? `<div class="token-line">🪙 &uarr;&nbsp;${inTok != null ? inTok.toLocaleString() : '?'} in &nbsp;&middot;&nbsp; &darr;&nbsp;${outTok != null ? outTok.toLocaleString() : '?'} out &nbsp;&middot;&nbsp; &Sigma;&nbsp;${totalTok.toLocaleString()} total</div>`
+                    : '';
+
+                appendBubble(
+                    `<div class="ai-answer-text">${escapeHtml(data.answer || '')}</div>${sourcesHtml}${tokenLine}`,
+                    'ai-bubble'
+                );
+            } catch (err) {
+                loadingBubble.remove();
+                appendBubble(`<strong>Error:</strong> ${escapeHtml(err.message)}`, 'error-bubble');
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+            }
+        }
+
+        // Ctrl+Enter sends the message
+        document.getElementById('chat-input').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                sendChat();
+            }
+        });
+
+        // Hydrate password into chat panel on load
+        (function() {
+            const saved = loadPassword();
+            if (saved) document.getElementById('chat-password').value = saved;
+        })();
+
+        // Populate table dropdown from /tables
+        (async function() {
+            try {
+                const res = await fetch('/tables');
+                if (!res.ok) return;
+                const data = await res.json();
+                const sel = document.getElementById('chat-table');
+                const tables = data.tables || data.table_names || [];
+                if (tables.length === 0) return;
+                sel.innerHTML = tables.map(t => {
+                    const name = typeof t === 'string' ? t : t.table_name;
+                    return `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
+                }).join('');
+            } catch (_) { /* keep default option */ }
+        })();
     </script>
 </body>
 </html>
