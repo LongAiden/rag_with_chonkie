@@ -6,9 +6,10 @@ A Retrieval-Augmented Generation (RAG) system built with FastAPI, PostgreSQL + p
 
 ```
 PDF file  →  Parser (choose one)       →  MarkdownChunker  →  pgvector  →  Query + Rerank  →  LLM Answer (choose one)
-input/pdf/   • PyMuPDF (default)          (chonkie)           (PostgreSQL)   (BM25)            • Gemini 2.5 Flash
-             • Docling + Ollama VLM                                                             • DeepSeek-R1 8B (Ollama)
-             • Docling + Gemini Vision
+input/pdf/   • PyMuPDF (default)          (chonkie)           (PostgreSQL)   (BM25)            • Gemini 2.5 Flash  (google-generativeai SDK)
+             • Docling + Ollama VLM                                                             • DeepSeek-R1 8B    (Ollama /api/generate)
+             • Docling + Gemini Vision                                                          • DeepSeek-R1 1.5B  (Ollama)
+                                                                                                • Llama 3.2 3B      (Ollama)
 ```
 
 1. **Upload a PDF** - choose a parsing backend: fast PyMuPDF (default), Docling + local Ollama VLM (`qwen2.5vl:7b`), or Docling + Gemini Vision. The result is stored as Markdown in `input/markdown/`
@@ -100,6 +101,8 @@ docker compose --profile dev up -d pgadmin
 | `GET` | `/` | Web UI |
 | `POST` | `/upload` | Upload and process a document |
 | `POST` | `/query` | Ask a question, get a RAG answer |
+| `GET` | `/tables` | List all chunk tables |
+| `GET` | `/tables/count` | Count chunk tables in the database |
 | `GET` | `/stats` | Database statistics |
 | `GET` | `/health` | Health check |
 | `GET` | `/supported-types` | Accepted file formats |
@@ -210,23 +213,29 @@ Copy `.env.example` to `.env` and set these values:
 | `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model for Q&A |
 | `OLLAMA_BASE_URL` | No | `http://host.docker.internal:11434` | Ollama endpoint (Docker uses host network) |
 | `OLLAMA_MODEL` | No | `deepseek-r1:8b` | Text model for RAG Q&A (runs locally via Ollama) |
-| `OLLAMA_VLM_MODEL` | No | `qwen2.5vl:7b` | VLM model for PDF image/table extraction |
+| `OLLAMA_VLM_MODEL` | No | `qwen3.5:9b` | VLM model for PDF image/table extraction (multimodal) |
 | `CHUNKER_TYPE` | No | `markdown` | `markdown` / `recursive` / `token` / `semantic` |
 | `APP_ACCESS_PASSWORD` | No | *(disabled)* | Password-protect the web UI |
 | `LOGFIRE_WRITE_TOKEN` | No | - | [Logfire](https://logfire.pydantic.dev/) monitoring |
 
-### How Ollama is used
+### How LLM backends work
 
-This project does **not** use the OpenAI API. Ollama exposes an OpenAI-compatible REST API at `/v1/chat/completions`, so pydantic-ai's `OpenAIModel` is reused with an `OllamaProvider` pointing to your local Ollama server:
+Each model type uses a dedicated backend in `retrieval/llm_operations.py`:
 
+**Gemini** — calls `google-generativeai` SDK directly:
 ```
-pydantic-ai OpenAIModel  →  OllamaProvider(base_url=OLLAMA_BASE_URL)  →  Ollama (runs on Windows host)
+GeminiBackend  →  genai.GenerativeModel(model).generate_content(prompt)  →  Gemini API
 ```
 
-- `OLLAMA_MODEL` (`deepseek-r1:8b`) — answers user questions in the RAG pipeline
-- `OLLAMA_VLM_MODEL` — processes images and complex tables during PDF parsing (Docling + Ollama backend only)
+**Ollama** — calls the Ollama REST API directly over HTTP:
+```
+OllamaBackend  →  POST OLLAMA_BASE_URL/api/generate  →  Ollama (runs on Windows host)
+```
 
-No API key or internet connection is required for Ollama models.
+- `OLLAMA_MODEL` — the text model used to answer RAG questions (e.g. `deepseek-r1:8b`)
+- `OLLAMA_VLM_MODEL` — the vision model used to describe images and complex tables during PDF parsing (Docling + Ollama backend only)
+
+No API key or internet connection is required for Ollama models. `GOOGLE_API_KEY` is only needed when using a Gemini model.
 
 ---
 
@@ -322,7 +331,27 @@ docker build -f deployment/Dockerfile.base -t rag-base:latest .
 docker compose up --build
 ```
 
-**Commands
+**Chunk insertion fails with `asyncpg DataError: expected str, got dict` or `expected str, got list`:**
+
+asyncpg requires explicit types when inserting into `vector` and `jsonb` columns. The SQL must use explicit casts and the Python values must match what the cast expects:
+
+```sql
+-- SQL (in vector_store.py)
+INSERT INTO {table} (id, document_id, text, embedding, metadata)
+VALUES ($1, $2, $3, $4::vector, $5::jsonb)
+```
+
+```python
+# Python — $4::vector expects a string like "[0.1, 0.2, ...]"
+embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+
+# Python — $5::jsonb expects a JSON string, not a dict
+json.dumps(chunk.metadata if chunk.metadata else {})
+```
+
+Passing a raw `list` for `$4` or a raw `dict` for `$5` causes asyncpg to raise a `DataError`. The metadata field stores the full page content alongside chunk-level fields — no truncation is applied.
+
+**Commands:**
 ```bash
 docker exec rag_postgres psql -U admin -d rag_db -c "\dt"
 docker exec -it rag_redis redis-cli
