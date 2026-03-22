@@ -25,8 +25,8 @@ input/pdf/   • PyMuPDF (default)          (chonkie)           (PostgreSQL)   (
 ### 1. Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) (8 GB+ RAM allocated)
-- A [Google Gemini API key](https://makersuite.google.com/app/apikey) *(optional — only required for Gemini parsing or Gemini Q&A)*
-- [Ollama](https://ollama.com) running locally *(optional — required for local LLM parsing and Q&A)*
+- A [Google Gemini API key](https://makersuite.google.com/app/apikey) *(optional - only required for Gemini parsing or Gemini Q&A)*
+- [Ollama](https://ollama.com) running locally *(optional - required for local LLM parsing and Q&A)*
 
 ### 2. Configure environment
 
@@ -61,12 +61,59 @@ Open **http://127.0.0.1:8000**
 
 | URL | Description |
 |-----|-------------|
-| http://127.0.0.1:8000 | Web UI (upload + search) |
+| http://127.0.0.1:8000 | Web UI - Chat and Embed tabs |
+| http://127.0.0.1:8000/stats | Database statistics |
+| http://127.0.0.1:8000/health | System health check |
 | http://127.0.0.1:8000/docs | **Swagger UI - interactive API docs** |
 | http://127.0.0.1:8000/redoc | ReDoc - readable API reference |
-| http://127.0.0.1:8000/health | Health check |
 
 > **Swagger UI** (`/docs`) lets you call every endpoint directly from the browser - no curl or Postman needed. Click an endpoint → **Try it out** → fill in params → **Execute**.
+
+---
+
+## Web UI
+
+Open **http://127.0.0.1:8000**. The main page has two tabs: **Chat** and **Embed**.
+
+### Chat tab
+
+Ask questions against documents already stored in the database.
+
+1. Click **💬 Chat** (active by default).
+2. *(Optional)* Click **⚙️ Settings** to change:
+   - **Model** - Gemini 2.5 Flash (cloud) or a local Ollama model
+   - **Max Results** - number of chunks retrieved (default: 5)
+   - **Threshold** - minimum similarity score to include a chunk (default: 0.5)
+   - **Table** - which document table to search
+   - **Password** - required only if `APP_ACCESS_PASSWORD` is set
+3. Type your question in the input box and press **Send** or `Ctrl+Enter`.
+4. The response appears with:
+   - The LLM-generated answer
+   - Source chunks used (document ID, similarity %, page number)
+   - A stats line: chunks found · table · search method
+   - Token usage (input / output / total)
+5. To start a new session, click **🗑️ Clear** - this removes all messages from the view.
+
+> The chat area is hidden until you send the first message.
+
+### Embed tab
+
+Upload and process a new document into the database.
+
+1. Click **📤 Embed**.
+2. Fill in the form:
+   - **Document File** - select a PDF, DOCX, or TXT file
+   - **PDF Parsing Backend** - `Default (PyMuPDF only)` for speed; `Gemini Vision (docling)` or `Ollama VLM (docling)` for richer extraction of images and complex tables
+   - **Access Password** - required only if `APP_ACCESS_PASSWORD` is set
+   - **Table Name** - target table in the database (default: `document_chunks`)
+   - **Chunk Size** - token size per chunk (default: 512)
+3. Click **📤 Upload & Process**. Processing runs as a background task via Celery.
+
+### Navigation
+
+From the main page, use the bottom buttons to jump to:
+- **📊 Statistics** - document and chunk counts, system configuration, timeline
+- **🏥 Health** - live status of the database, embedding model, and vector store
 
 ### 4. Stop services
 
@@ -222,18 +269,18 @@ Copy `.env.example` to `.env` and set these values:
 
 Each model type uses a dedicated backend in `retrieval/llm_operations.py`:
 
-**Gemini** — calls `google-generativeai` SDK directly:
+**Gemini** - calls `google-generativeai` SDK directly:
 ```
 GeminiBackend  →  genai.GenerativeModel(model).generate_content(prompt)  →  Gemini API
 ```
 
-**Ollama** — calls the Ollama REST API directly over HTTP:
+**Ollama** - calls the Ollama REST API directly over HTTP:
 ```
 OllamaBackend  →  POST OLLAMA_BASE_URL/api/generate  →  Ollama (runs on Windows host)
 ```
 
-- `OLLAMA_MODEL` — the text model used to answer RAG questions (e.g. `deepseek-r1:8b`)
-- `OLLAMA_VLM_MODEL` — the vision model used to describe images and complex tables during PDF parsing (Docling + Ollama backend only)
+- `OLLAMA_MODEL` - the text model used to answer RAG questions (e.g. `deepseek-r1:8b`)
+- `OLLAMA_VLM_MODEL` - the vision model used to describe images and complex tables during PDF parsing (Docling + Ollama backend only)
 
 No API key or internet connection is required for Ollama models. `GOOGLE_API_KEY` is only needed when using a Gemini model.
 
@@ -265,29 +312,33 @@ pytest tests/integration -v    # requires running postgres
 
 ## Screenshots
 
-**Web UI:**
+**Home screen (idle - no chat session yet):**
 
 <img src="./images/home_screen.png" alt="Home Screen" width="600">
 
-**Query + Results:**
+<img src="./images/chat_session_idle.png" alt="Chat Tab Idle" width="600">
 
-<img src="./images/query.png" alt="Query Interface" width="600">
+**Chat session - query + results:**
 
-<img src="./images/rerank_result.png" alt="Reranked Results" width="600">
+<img src="./images/chat_session.png" alt="Chat Session with Results" width="600">
 
-<img src="./images/metadata_rerank.png" alt="Source Metadata" width="400">
+**Swagger UI (interactive API docs):**
 
-**Health + Stats:**
+<img src="./images/fastapi.png" alt="FastAPI Swagger UI" width="600">
 
-<img src="./images/health_status.png" alt="Health Status" width="600">
+**Health check:**
 
-<img src="./images/database.png" alt="Database Statistics" width="600">
+<img src="./images/system_health_check.png" alt="System Health Check" width="600">
+
+**Database statistics:**
+
+<img src="./images/database_statistic.png" alt="Database Statistics" width="600">
 
 **Logfire monitoring:**
 
 <img src="./images/logfire_example.png" alt="Logfire" width="600">
 
-<img src="./images/rerank_logfire.png" alt="Logfire Rerank Step" width="600">
+<img src="./images/llm_request_logs.png" alt="LLM Request Logs" width="600">
 
 ---
 
@@ -342,20 +393,31 @@ VALUES ($1, $2, $3, $4::vector, $5::jsonb)
 ```
 
 ```python
-# Python — $4::vector expects a string like "[0.1, 0.2, ...]"
+# Python - $4::vector expects a string like "[0.1, 0.2, ...]"
 embedding_str = "[" + ",".join(map(str, embedding)) + "]"
 
-# Python — $5::jsonb expects a JSON string, not a dict
+# Python - $5::jsonb expects a JSON string, not a dict
 json.dumps(chunk.metadata if chunk.metadata else {})
 ```
 
-Passing a raw `list` for `$4` or a raw `dict` for `$5` causes asyncpg to raise a `DataError`. The metadata field stores the full page content alongside chunk-level fields — no truncation is applied.
+Passing a raw `list` for `$4` or a raw `dict` for `$5` causes asyncpg to raise a `DataError`. The metadata field stores the full page content alongside chunk-level fields - no truncation is applied.
 
 **Commands:**
 ```bash
 docker exec rag_postgres psql -U admin -d rag_db -c "\dt"
 docker exec -it rag_redis redis-cli
 ```
+
+## Known Limitations
+
+**Retrieval**
+- Structural queries fail - questions like "how many points are in this section?" require the model to count items within a document section, but the chunker splits content across chunk boundaries. The relevant items may span multiple chunks or the section header may land in a different chunk than its body, so the LLM sees incomplete context and cannot answer correctly.
+- Document-level headers are not reliably retrieved - top-level headings (chapter titles, section names) are sometimes separated from their content during chunking. Asking "what does section X cover?" may return no useful chunks if the header chunk scores below the similarity threshold.
+
+**Parsing**
+- Docling + Ollama/Gemini section detection needs improvement - the VLM-assisted parser does not always correctly identify section boundaries in complex PDFs (e.g., multi-column layouts, tables that span sections). This can cause section headings to merge with unrelated content or be dropped entirely.
+
+---
 
 ## Further Reading
 

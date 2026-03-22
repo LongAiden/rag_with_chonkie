@@ -131,23 +131,29 @@ HOME_PAGE_HTML = """
         /* Tab styles */
         .tab-bar {
             display: flex;
-            gap: 4px;
-            margin-bottom: 0;
+            gap: 8px;
+            margin: 20px 0 12px 0;
         }
         .tab-btn {
-            padding: 12px 28px;
-            border: none;
-            border-radius: 10px 10px 0 0;
-            background: rgba(255, 255, 255, 0.40);
-            color: rgba(255, 255, 255, 0.80);
+            padding: 10px 28px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.18);
+            color: rgba(255, 255, 255, 0.75);
             cursor: pointer;
             font-weight: 600;
             font-size: 15px;
-            transition: background 0.2s, color 0.2s;
+            transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.28);
+            color: #ffffff;
         }
         .tab-btn.active {
-            background: rgba(59, 130, 246, 0.22);
+            background: rgba(59, 130, 246, 0.35);
+            border-color: rgba(59, 130, 246, 0.70);
             color: #e0f0ff;
+            box-shadow: 0 2px 12px rgba(59, 130, 246, 0.30);
         }
         .tab-panel { display: none; }
         .tab-panel.active { display: block; }
