@@ -129,6 +129,60 @@ def _normalize_tables_in_markdown(md: str) -> str:
     return "\n".join(out)
 
 
+_NUMBERED_HEADING_RE = re.compile(
+    r'^(\d+(?:\.\d+)*\.?)\s+([A-Z][^\n]{2,60})$'
+)
+_ALLCAPS_LINE_RE = re.compile(r'^[A-Z][A-Z\s\-/]{4,50}$')
+
+
+def _fix_markdown_headings(md: str) -> str:
+    """
+    Post-processing pass to promote plain-text lines that look like headings
+    but were emitted as TextItem by Docling (not SectionHeaderItem).
+
+    Rules (applied per-line, skipping content inside <table>…</table>):
+      1. Numbered sections: "1. Title", "1.1 Title", "2.3.4 Title" → ## or ###
+      2. ALL-CAPS short line → ##
+    Lines already starting with '#' are left unchanged.
+    """
+    lines = md.splitlines()
+    result = []
+    in_table = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Track table regions to avoid corrupting table content
+        if '<table>' in stripped.lower():
+            in_table = True
+        if '</table>' in stripped.lower():
+            in_table = False
+            result.append(line)
+            continue
+
+        if in_table or stripped.startswith('#') or not stripped:
+            result.append(line)
+            continue
+
+        # Rule 1: numbered section pattern
+        m = _NUMBERED_HEADING_RE.match(stripped)
+        if m:
+            numbering = m.group(1).rstrip('.')
+            depth = numbering.count('.')  # "1" → 0, "1.1" → 1, "1.1.1" → 2
+            prefix = '##' if depth == 0 else '###'
+            result.append(f"{prefix} {stripped}")
+            continue
+
+        # Rule 2: ALL-CAPS short line (e.g. "INTRODUCTION", "KEY CONCEPTS")
+        if _ALLCAPS_LINE_RE.match(stripped):
+            result.append(f"## {stripped}")
+            continue
+
+        result.append(line)
+
+    return "\n".join(result)
+
+
 # ── Main parser ───────────────────────────────────────────────────────────────
 class GeminiDoclingParser(PDFParserBase):
     """
@@ -456,7 +510,7 @@ class GeminiDoclingParser(PDFParserBase):
             if out_file:
                 out_file.close()
 
-        markdown = "".join(pages_md)
+        markdown = _fix_markdown_headings("".join(pages_md))
         if output_path:
             logger.info(f"Saved → {output_path}")
 
@@ -507,7 +561,7 @@ class GeminiDoclingParser(PDFParserBase):
             if out_file:
                 out_file.close()
 
-        markdown = "".join(pages_md)
+        markdown = _fix_markdown_headings("".join(pages_md))
         if output_path:
             logger.info(f"Saved → {output_path}")
 

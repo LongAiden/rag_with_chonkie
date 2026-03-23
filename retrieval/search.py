@@ -3,6 +3,7 @@ Document retrieval and search logic.
 Handles vector search, BM25 reranking, and response generation.
 """
 
+import re
 import logfire
 from typing import List, Optional
 
@@ -103,9 +104,40 @@ async def perform_document_search(
                 table_used=table_name
             )
 
+        # Step 1.6: Sibling expansion for structural queries (how many, list all, count…)
+        _STRUCTURAL_RE = re.compile(
+            r'\b(how many|list all|all the|count|enumerate|what are the|steps in|'
+            r'number of|how much|summarize all|every)\b',
+            re.IGNORECASE
+        )
+        section_context_blocks = []
+        if _STRUCTURAL_RE.search(query):
+            seen_section_doc = set()
+            for r in results:
+                sp = (r.get('metadata') or {}).get('section_path', '')
+                doc_id = r.get('document_id', '')
+                if sp and (sp, doc_id) not in seen_section_doc:
+                    seen_section_doc.add((sp, doc_id))
+                    siblings = await pipeline.vector_store.get_chunks_by_section(
+                        section_path=sp,
+                        document_ids=[doc_id],
+                        limit=15,
+                    )
+                    if siblings:
+                        combined = "\n\n".join(s['text'] for s in siblings)
+                        section_context_blocks.append(
+                            f"[Section context: {sp}]\n{combined}"
+                        )
+            logfire.info("Sibling expansion",
+                         sections_expanded=len(section_context_blocks))
+
         # Step 2: Build context from retrieved chunks with page numbers and full page content
         with logfire.span("context_building"):
             context_parts = []
+
+            # Prepend section context blocks so the LLM sees complete sections first
+            context_parts.extend(section_context_blocks)
+
             for i, result in enumerate(results):
                 page_info = ""
                 if result.get('metadata') and result['metadata'].get('page_number'):

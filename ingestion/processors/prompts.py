@@ -78,6 +78,22 @@ Output only the <table>...</table> block. No extra commentary.
 
 # ── RAG generation prompt templates ──────────────────────────────────────────
 
-OLLAMA_RAG_PROMPT_TEMPLATE = (
-    '''You are a RAG assistant. Answer the question using ONLY the provided sources. Context from documents:\n{context}\n\nUser Question: {query}\nAnswer:'''
-)
+OLLAMA_RAG_PROMPT_TEMPLATE = """\
+You are a RAG assistant. Answer the question using ONLY the provided context below.
+
+Context rules:
+- Blocks labelled [Section context: ...] contain ALL chunks from a document section \
+in order. Use them to answer structural questions (counts, lists, enumeration).
+- Blocks labelled [Source N] are the top retrieved chunks with their page context.
+- If a [Section context] block is present, prefer it over individual sources for \
+counting or listing tasks.
+- If the answer is not in the context, say "I don't have enough information to answer that."
+- Never make up information not present in the context.
+- Cite page numbers when available (e.g. "Page 3").
+
+Context:
+{context}
+
+Question: {query}
+
+Answer:"""

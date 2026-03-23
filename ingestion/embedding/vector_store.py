@@ -480,6 +480,42 @@ class VectorStore:
             print(f"Error searching chunks: {e}")
             raise
 
+    async def get_chunks_by_section(
+        self,
+        section_path: str,
+        document_ids: List[str],
+        limit: int = 20,
+    ) -> List[Dict]:
+        """Return all chunks that share the same section_path, ordered by chunk_index."""
+        if not section_path:
+            return []
+        try:
+            if not self._initialized:
+                await self._initialize_database()
+            conn = await self._get_connection()
+            query = f"""
+                SELECT id, text, metadata, document_id
+                FROM {self.table_name}
+                WHERE metadata->>'section_path' = $1
+                  AND document_id = ANY($2)
+                ORDER BY (metadata->>'chunk_index')::int
+                LIMIT $3
+            """
+            rows = await conn.fetch(query, section_path, document_ids, limit)
+            await conn.close()
+            return [
+                {
+                    'chunk_id': row['id'],
+                    'text': row['text'],
+                    'metadata': row['metadata'] if isinstance(row['metadata'], (dict, type(None))) else json.loads(row['metadata']),
+                    'document_id': row['document_id'],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"Error fetching chunks by section: {e}")
+            return []
+
     async def delete_document_chunks(self, document_id: str) -> int:
         """Delete all chunks for a specific document."""
         try:
@@ -620,10 +656,12 @@ class ChunkEmbeddingPipeline:
                     else:
                         last_section_prefix = section_prefix
 
+                    chunk.section_path = section_prefix
                     if section_prefix:
                         chunk.text = f"{section_prefix} - {chunk.text}"
                 else:
                     chunk.page_number = 1
+                    chunk.section_path = last_section_prefix
                     if last_section_prefix:
                         chunk.text = f"{last_section_prefix} - {chunk.text}"
 
@@ -744,6 +782,7 @@ class ChunkEmbeddingPipeline:
                 'start_index': getattr(chunk, 'start_index', None),
                 'end_index': getattr(chunk, 'end_index', None),
                 'page_number': page_number,
+                'section_path': getattr(chunk, 'section_path', ''),
                 'page_content': raw_page_content,
                 'full_content': raw_full_content,
                 'chunk_size': chunk_size,
