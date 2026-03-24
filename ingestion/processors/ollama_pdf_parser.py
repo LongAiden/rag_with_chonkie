@@ -15,6 +15,7 @@ from ingestion.processors.gemini_docling_parser import (
     _normalize_tables_in_markdown,
     _clean_html,
     _fix_table_closing_tags,
+    _fix_markdown_headings,
 )
 from ingestion.processors.prompts import (
     VLM_IMAGE_PROMPT as _VLM_IMAGE_PROMPT,
@@ -182,6 +183,6 @@ class OllamaPDFParser(GeminiDoclingParser):
             if out_file:
                 out_file.close()
 
-        markdown = "".join(pages_md)
+        markdown = _fix_markdown_headings("".join(pages_md))
         print(f"\nDone. Ollama VLM calls: {self._vlm_calls} | pages: {total_pages}")
         return markdown
