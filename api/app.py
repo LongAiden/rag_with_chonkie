@@ -47,8 +47,6 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
             embedding_model=DEFAULT_EMBEDDING_MODEL,
             table_name=table_name
         )
-        # Initialize the database for the new pipeline
-        await config.pipeline.vector_store._initialize_database()
     return config.pipeline
 
 

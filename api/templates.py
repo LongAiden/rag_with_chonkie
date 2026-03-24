@@ -328,6 +328,7 @@ HOME_PAGE_HTML = """
                 <select id="chat-table" class="model-select" style="margin:0;padding:6px 10px;font-size:13px;">
                     <option value="document_chunks">document_chunks (loading...)</option>
                 </select>
+                <button type="button" onclick="loadTableList()" title="Refresh table list" style="margin-left:6px;padding:6px 10px;font-size:13px;cursor:pointer;">↻</button>
             </label>
             <label>Password: <input type="password" id="chat-password" placeholder="Required if configured"></label>
         </div>
@@ -642,7 +643,7 @@ HOME_PAGE_HTML = """
         })();
 
         // Populate table dropdown from /tables
-        (async function() {
+        async function loadTableList() {
             try {
                 const res = await fetch('/tables');
                 if (!res.ok) return;
@@ -650,12 +651,16 @@ HOME_PAGE_HTML = """
                 const sel = document.getElementById('chat-table');
                 const tables = data.tables || data.table_names || [];
                 if (tables.length === 0) return;
+                const current = sel.value;
                 sel.innerHTML = tables.map(t => {
                     const name = typeof t === 'string' ? t : t.table_name;
                     return `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
                 }).join('');
+                // Restore previous selection if it still exists
+                if (current && [...sel.options].some(o => o.value === current)) sel.value = current;
             } catch (_) { /* keep default option */ }
-        })();
+        }
+        loadTableList();
     </script>
 </body>
 </html>
