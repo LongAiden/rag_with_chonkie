@@ -112,9 +112,7 @@ Answer:"""
             output_tokens = getattr(usage, 'candidates_token_count', None)
             total_tokens = getattr(usage, 'total_token_count', None)
 
-            logfire.info("Gemini response generated",
-                        model=self.model, input_tokens=input_tokens,
-                        output_tokens=output_tokens, sources_used=sources_used)
+            logfire.info("Gemini response generated", model=self.model, sources_used=sources_used)
 
             return SimpleRAGResponse(
                 answer=answer,

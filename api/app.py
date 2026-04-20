@@ -50,6 +50,11 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
     return config.pipeline
 
 
+# Observability routes
+import api.routes.observability_routes as _obs_routes
+_obs_routes._connection_string = config.connection_string
+app.include_router(_obs_routes.router)
+
 # -----------------------------------------------
 # GRAPH ROUTES - currently disabled
 # The knowledge-graph feature (entity extraction,

@@ -83,6 +83,11 @@ class AppSettings(BaseSettings):
     # Table
     table_name: str = Field(default=DEFAULT_TABLE_NAME)
 
+    # Langfuse observability (optional)
+    langfuse_host: Optional[str] = Field(default=None, validation_alias='LANGFUSE_HOST')
+    langfuse_public_key: Optional[str] = Field(default=None, validation_alias='LANGFUSE_PUBLIC_KEY')
+    langfuse_secret_key: Optional[str] = Field(default=None, validation_alias='LANGFUSE_SECRET_KEY')
+
 
 class AppConfig:
     """Global application configuration and service initialization."""
@@ -107,6 +112,11 @@ class AppConfig:
         self.pipeline = None  # Lazy initialization
         self.reranker = None  # Lazy initialization
         self.graph_pool = None  # Lazy initialization
+
+    @property
+    def connection_string(self) -> str:
+        p = self.db_config
+        return f"postgresql://{p.user}:{p.password}@{p.host}:{p.port}/{p.dbname}"
 
     def _configure_logfire(self):
         """Configure logfire with token from settings."""

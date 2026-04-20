@@ -47,5 +47,14 @@ if [ "$BUILD_APP" = true ]; then
 fi
 
 echo "========================================"
+echo "Ensuring langfuse_db exists..."
+echo "========================================"
+docker compose exec postgres psql -U admin -tc \
+    "SELECT 1 FROM pg_database WHERE datname = 'langfuse_db'" \
+    | grep -q 1 \
+    && echo "langfuse_db already exists, skipping." \
+    || docker compose exec postgres psql -U admin -c "CREATE DATABASE langfuse_db;"
+
+echo "========================================"
 echo "Build complete!"
 echo "========================================"

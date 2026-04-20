@@ -105,6 +105,11 @@ services:
       ENABLE_PARALLEL_EXTRACTION: ${ENABLE_PARALLEL_EXTRACTION:-true}
       ENABLE_ENTITY_CACHING: ${ENABLE_ENTITY_CACHING:-true}
 
+      # Langfuse observability (optional — leave blank to disable)
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse:3000}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Celery broker/backend + optional FE password
@@ -176,6 +181,37 @@ services:
         condition: service_started
     networks:
       - rag_network
+    restart: unless-stopped
+
+  # ============================================
+  # Langfuse (Optional - LLM Observability UI)
+  # Start with: docker compose --profile observability up langfuse
+  # UI at: http://localhost:3000
+  # ============================================
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: rag_langfuse
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/langfuse_db
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-use-a-real-secret-in-prod}
+      NEXTAUTH_URL: http://localhost:3000
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-rag-org}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-rag-project}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-lf-pk-placeholder}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-lf-sk-placeholder}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - rag_network
+    profiles:
+      - observability
     restart: unless-stopped
 
   # ============================================

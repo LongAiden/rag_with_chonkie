@@ -3,13 +3,16 @@ Document retrieval and search logic.
 Handles vector search, BM25 reranking, and response generation.
 """
 
+import asyncio
 import re
+import time
 import logfire
 from typing import List, Optional
 
 from retrieval.utils import rerank_bm25
 from retrieval.llm_operations import generate_llm_response
 from models.models import RAGResponse, RAGSource, RAGResponseMetadata
+from observability.llm_logger import InteractionPayload, log_interaction
 
 
 async def perform_document_search(
@@ -20,7 +23,8 @@ async def perform_document_search(
     config,
     document_ids: Optional[List[str]] = None,
     table_name: str = "document_chunks",
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-2.5-flash",
+    session_id: Optional[str] = None,
 ) -> RAGResponse:
     """
     Common document search logic with optional reranking.
@@ -165,10 +169,31 @@ async def perform_document_search(
                         context_length=len(context))
 
         # Step 3: Generate response with LLM
+        t0 = time.monotonic()
         llm_response = await generate_llm_response(query, context, results, config.agent, model=model)
+        latency_ms = int((time.monotonic() - t0) * 1000)
 
         # Calculate search statistics
         avg_similarity = sum(r['similarity'] for r in results) / len(results)
+
+        # Fire-and-forget: persist interaction to llm_interactions table (and Langfuse if configured)
+        asyncio.create_task(log_interaction(
+            InteractionPayload(
+                question=query,
+                answer=llm_response.answer,
+                model=model,
+                backend=llm_response.metadata.get("method", "unknown"),
+                latency_ms=latency_ms,
+                sources_used=len(results),
+                table_name=table_name,
+                rerank_method="bm25" if reranking_enabled else "none",
+                input_tokens=llm_response.input_tokens,
+                output_tokens=llm_response.output_tokens,
+                total_tokens=llm_response.total_tokens,
+                session_id=session_id,
+            ),
+            config.connection_string,
+        ))
 
         # Create structured response
         return RAGResponse(

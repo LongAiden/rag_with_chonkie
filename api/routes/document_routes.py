@@ -227,6 +227,7 @@ async def query_documents(
             document_ids=request.document_ids,
             table_name=table_name,
             model=request.model,
+            session_id=request.session_id,
         )
         # Return the structured RAGResponse directly
         return result
