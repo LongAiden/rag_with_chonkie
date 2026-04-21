@@ -5,6 +5,7 @@ Handles LLM-based response generation with fallback mechanisms.
 
 import os
 import logfire
+from langfuse.decorators import observe, langfuse_context
 
 from models.models import SimpleRAGResponse
 from ingestion.processors.prompts import OLLAMA_RAG_PROMPT_TEMPLATE
@@ -136,6 +137,7 @@ def _get_backend(model: str) -> OllamaBackend | GeminiBackend:
     return OllamaBackend(model)
 
 
+@observe(name="llm_generate", as_type="generation")
 async def generate_llm_response(
     query: str,
     context: str,
@@ -145,4 +147,15 @@ async def generate_llm_response(
 ) -> SimpleRAGResponse:
     backend = _get_backend(model)
     logfire.info("LLM request", model=model, backend=type(backend).__name__, results_count=len(results))
-    return await backend.generate(query, context, results, agent)
+    response = await backend.generate(query, context, results, agent)
+    langfuse_context.update_current_observation(
+        model=model,
+        usage={
+            "input": response.input_tokens,
+            "output": response.output_tokens,
+            "total": response.total_tokens,
+            "unit": "TOKENS",
+        },
+        metadata={"backend": type(backend).__name__.lower()},
+    )
+    return response

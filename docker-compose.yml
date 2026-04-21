@@ -194,11 +194,15 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/langfuse_db
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-use-a-real-secret-in-prod}
+      SALT: ${LANGFUSE_SALT:-changeme-use-a-real-salt-in-prod}
       NEXTAUTH_URL: http://localhost:3000
       LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-rag-org}
       LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-rag-project}
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-lf-pk-placeholder}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-lf-sk-placeholder}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     ports:

@@ -8,6 +8,7 @@ import re
 import time
 import logfire
 from typing import List, Optional
+from langfuse.decorators import observe, langfuse_context
 
 from retrieval.utils import rerank_bm25
 from retrieval.llm_operations import generate_llm_response
@@ -15,6 +16,7 @@ from models.models import RAGResponse, RAGSource, RAGResponseMetadata
 from observability.llm_logger import InteractionPayload, log_interaction
 
 
+@observe(name="rag_query")
 async def perform_document_search(
     query: str,
     limit: int,
@@ -41,6 +43,11 @@ async def perform_document_search(
     Returns:
         RAGResponse with answer, sources, and metadata
     """
+    langfuse_context.update_current_trace(
+        session_id=session_id,
+        metadata={"table_name": table_name},
+    )
+
     with logfire.span("document_search",
                      query=query[:100],  # Truncate long queries for logging
                      limit=limit,
