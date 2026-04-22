@@ -214,8 +214,6 @@ services:
         condition: service_started
     networks:
       - rag_network
-    profiles:
-      - observability
     restart: unless-stopped
 
   # ============================================

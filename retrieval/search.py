@@ -8,7 +8,16 @@ import re
 import time
 import logfire
 from typing import List, Optional
-from langfuse.decorators import observe, langfuse_context
+try:
+    from langfuse.decorators import observe, langfuse_context
+except ImportError:
+    langfuse_context = type("_Noop", (), {
+        "update_current_trace": staticmethod(lambda **_: None),
+        "update_current_observation": staticmethod(lambda **_: None),
+    })()
+    def observe(**__):
+        def decorator(fn): return fn
+        return decorator
 
 from retrieval.utils import rerank_bm25
 from retrieval.llm_operations import generate_llm_response

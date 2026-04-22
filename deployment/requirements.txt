@@ -55,7 +55,7 @@ python-dotenv>=1.0.0
 # Production Essentials (Add these)
 gunicorn>=21.2.0  # WSGI server for production
 logfire # For logging (status/errors only — tokens go to llm_interactions DB)
-langfuse>=2.0.0  # Optional LLM-Ops UI — only active when LANGFUSE_* env vars are set
+langfuse>=2.7.0  # Optional LLM-Ops UI — only active when LANGFUSE_* env vars are set; decorators require >=2.7.0
 
 # Async task queue
 celery[redis]>=5.3.0

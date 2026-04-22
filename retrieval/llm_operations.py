@@ -5,7 +5,16 @@ Handles LLM-based response generation with fallback mechanisms.
 
 import os
 import logfire
-from langfuse.decorators import observe, langfuse_context
+try:
+    from langfuse.decorators import observe, langfuse_context
+except ImportError:
+    langfuse_context = type("_Noop", (), {
+        "update_current_trace": staticmethod(lambda **_: None),
+        "update_current_observation": staticmethod(lambda **_: None),
+    })()
+    def observe(**__):
+        def decorator(fn): return fn
+        return decorator
 
 from models.models import SimpleRAGResponse
 from ingestion.processors.prompts import OLLAMA_RAG_PROMPT_TEMPLATE
