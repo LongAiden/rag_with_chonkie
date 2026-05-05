@@ -189,7 +189,7 @@ services:
   # UI at: http://localhost:3000
   # ============================================
   langfuse:
-    image: langfuse/langfuse:2
+    image: langfuse/langfuse:2.80
     container_name: rag_langfuse
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/langfuse_db
@@ -220,7 +220,7 @@ services:
   # pgAdmin (Optional - Database Management UI)
   # ============================================
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4:8.14
     container_name: rag_pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@rag.local}

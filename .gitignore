@@ -29,6 +29,9 @@ uploads/*.docx
 uploads/*.txt
 !uploads/.gitkeep
 
+# Input data
+input/
+
 # Test artifacts
 htmlcov/
 .coverage
