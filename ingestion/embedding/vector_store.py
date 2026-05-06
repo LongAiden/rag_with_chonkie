@@ -3,6 +3,7 @@ from ingestion.text_cleaning import TextCleanerFactory
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
+import asyncio
 import os
 import re
 import json
@@ -290,6 +291,7 @@ class VectorStore:
         self.table_name = table_name
         self.connection_string = self._build_connection_string()
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
     def _build_connection_string(self) -> str:
         """Build asyncpg connection string from parameters."""
@@ -304,55 +306,59 @@ class VectorStore:
 
     async def _initialize_database(self):
         """Initialize database with pgvector extension and table."""
-        try:
+        if self._initialized:
+            return
+
+        async with self._init_lock:
             if self._initialized:
                 return
 
-            conn = await self._get_connection()
             try:
-                # Create table with proper vector column
-                # Assuming 384-dimensional embeddings for all-MiniLM-L6-v2
-                # Adjust dimension based on your model
-                await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    id TEXT PRIMARY KEY,
-                    document_id TEXT NOT NULL,
-                    text TEXT NOT NULL,
-                    embedding vector(384),  -- Adjust dimension as needed
-                    metadata JSONB,
-                    entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-                """)
+                conn = await self._get_connection()
+                try:
+                    # Create table with proper vector column
+                    # Assuming 384-dimensional embeddings for all-MiniLM-L6-v2
+                    # Adjust dimension based on your model
+                    await conn.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {self.table_name} (
+                        id TEXT PRIMARY KEY,
+                        document_id TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        embedding vector(384),  -- Adjust dimension as needed
+                        metadata JSONB,
+                        entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """)
 
-                # Create index for similarity search
-                await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_idx
-                ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
-                """)
+                    # Create index for similarity search
+                    await conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_idx
+                    ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
+                    """)
 
-                # Create index on document_id for filtering
-                await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS {self.table_name}_document_id_idx
-                ON {self.table_name} (document_id);
-                """)
+                    # Create index on document_id for filtering
+                    await conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS {self.table_name}_document_id_idx
+                    ON {self.table_name} (document_id);
+                    """)
 
-                self._initialized = True
-                print(f"Database initialized with table: {self.table_name}")
-            finally:
-                await conn.close()
+                    self._initialized = True
+                    print(f"Database initialized with table: {self.table_name}")
+                finally:
+                    await conn.close()
 
-        except Exception as e:
-            tb = traceback.format_exc()
-            logfire.error(
-                "Database initialization failed",
-                table_name=self.table_name,
-                error_type=type(e).__name__,
-                error=str(e),
-                traceback=tb,
-            )
-            print(f"[DB INIT ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
-            raise
+            except Exception as e:
+                tb = traceback.format_exc()
+                logfire.error(
+                    "Database initialization failed",
+                    table_name=self.table_name,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                    traceback=tb,
+                )
+                print(f"[DB INIT ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
+                raise
 
     async def add_chunks(self, chunks: List[Chunk], batch_size: int = 100):
         """Add chunks to vector store using batch insert for efficiency."""
