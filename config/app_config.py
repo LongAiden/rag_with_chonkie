@@ -67,7 +67,7 @@ class AppSettings(BaseSettings):
 
     # Ollama
     ollama_base_url: str = Field(default='http://localhost:11434', validation_alias='OLLAMA_BASE_URL')
-    ollama_model: str = Field(default='deepseek-r1:8b', validation_alias='OLLAMA_MODEL')
+    ollama_model: str = Field(default='deepseek-r1:1.5b', validation_alias='OLLAMA_MODEL')
     ollama_vlm_model: str = Field(default='qwen3.5:9b', validation_alias='OLLAMA_VLM_MODEL')
 
     # Gemini/Google AI (kept for backward compatibility)

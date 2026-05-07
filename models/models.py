@@ -10,7 +10,7 @@ class QueryRequest(BaseModel):
     document_ids: Optional[List[str]] = None
     enable_reranking: bool = Field(default=False, description="Enable cross-encoder reranking")
     rerank_top_k: Optional[int] = Field(None, ge=1, le=20, description="Number of results to return after reranking")
-    model: str = Field(default="gemini-2.5-flash", description="LLM model to use for response generation")
+    model: str = Field(default="deepseek-r1:1.5b", description="LLM model to use for response generation")
     table_name: str = Field(default="document_chunks", description="Database table to search")
     session_id: Optional[str] = Field(None, description="Optional session identifier for grouping interactions")
 

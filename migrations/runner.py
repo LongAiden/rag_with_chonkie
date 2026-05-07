@@ -65,12 +65,14 @@ async def run_migrations(connection_string: str) -> None:
                 continue
 
             try:
-                async with conn.transaction():
-                    await conn.execute(sql)
-                    await conn.execute(
-                        "INSERT INTO schema_migrations (filename) VALUES ($1)",
-                        filename,
-                    )
+                # Execute without explicit transaction so each statement is its own
+                # implicit transaction. This avoids rollback of the tracking INSERT
+                # when idempotent DDL (CREATE IF NOT EXISTS) statements succeed.
+                await conn.execute(sql)
+                await conn.execute(
+                    "INSERT INTO schema_migrations (filename) VALUES ($1)",
+                    filename,
+                )
                 logger.info("Applied migration: %s", filename)
             except Exception as exc:
                 logger.error("Migration failed (non-fatal): %s — %s", filename, exc)
