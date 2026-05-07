@@ -153,18 +153,33 @@ async def generate_llm_response(
     agent,
     model: str = "gemini-2.5-flash",
 ) -> SimpleRAGResponse:
+    """Clean implementation — no Langfuse decorator here to avoid serializing heavy objects."""
+    return await _traced_generate(query, context, results, model)
+
+
+@observe(name="llm_generate", as_type="generation")
+async def _traced_generate(
+    query: str,
+    context: str,
+    results: list,
+    model: str,
+) -> SimpleRAGResponse:
+    """Langfuse-traced LLM generation wrapper.
+
+    Only receives serialisable primitives (str, list, int) so @observe
+    never attempts to serialise a PyTorch model or Agent object.
+    """
     backend = _get_backend(model)
     logfire.info("LLM request", model=model, backend=type(backend).__name__, results_count=len(results))
-    response = await backend.generate(query, context, results, agent)
-    # Langfuse tracing temporarily disabled due to memory issues
-    # langfuse_context.update_current_observation(
-    #     model=model,
-    #     usage={
-    #         "input": response.input_tokens,
-    #         "output": response.output_tokens,
-    #         "total": response.total_tokens,
-    #         "unit": "TOKENS",
-    #     },
-    #     metadata={"backend": type(backend).__name__.lower()},
-    # )
+    response = await backend.generate(query, context, results, None)
+    langfuse_context.update_current_observation(
+        model=model,
+        usage={
+            "input": response.input_tokens,
+            "output": response.output_tokens,
+            "total": response.total_tokens,
+            "unit": "TOKENS",
+        },
+        metadata={"backend": type(backend).__name__.lower()},
+    )
     return response

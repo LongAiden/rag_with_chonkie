@@ -51,11 +51,12 @@ async def perform_document_search(
     Returns:
         RAGResponse with answer, sources, and metadata
     """
-    # Langfuse tracing temporarily disabled due to memory issues
-    # langfuse_context.update_current_trace(
-    #     session_id=session_id,
-    #     metadata={"table_name": table_name},
-    # )
+    # Attach session_id to the active Langfuse trace (created by the route wrapper)
+    if session_id:
+        langfuse_context.update_current_trace(
+            session_id=session_id,
+            metadata={"table_name": table_name},
+        )
 
     with logfire.span("document_search",
                      query=query[:100],  # Truncate long queries for logging
