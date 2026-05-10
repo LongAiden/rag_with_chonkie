@@ -70,43 +70,20 @@ class GeminiBackend:
 
         genai.configure(api_key=api_key)
 
-        # Preserve any [Section context: ...] blocks from sibling expansion
-        raw_parts = context.split('\n\n---\n\n')
-        section_blocks = [p for p in raw_parts if p.strip().startswith('[Section context:')]
-
-        # Build deduplicated per-page context from results
-        seen_pages: dict = {}
-        for result in results:
-            meta = result.get('metadata') or {}
-            doc_id = result.get('document_id', '')
-            page_num = meta.get('page_number')
-            page_key = (doc_id, page_num if page_num is not None else 'full')
-            if page_key in seen_pages:
-                continue
-            content = (meta.get('full_content') or '').strip()
-            label = f"Page {page_num}" if page_num is not None else "Document"
-            seen_pages[page_key] = (label, content)
-
-        page_parts = [
-            f"[{label}]:\n{content}"
-            for label, content in seen_pages.values()
-            if content
-        ]
-        rich_context = "\n\n---\n\n".join(section_blocks + page_parts) or context
-
         prompt = f"""You are a RAG assistant. Answer the question using ONLY the provided context below.
 
 Context rules:
 - Blocks labelled [Section context: ...] contain ALL chunks from a document section in order. \
 Use them to answer structural questions (counts, lists, enumeration).
-- Blocks labelled [Page N] are deduplicated full-page extracts from the top retrieved chunks.
-- If a [Section context] block is present, prefer it over page blocks for counting or listing tasks.
+- Blocks labelled [Source N] are the top retrieved chunks with their page context.
+- If a [Section context] block is present, prefer it over individual sources for \
+counting or listing tasks.
 - If the answer is not in the context, say "I don't have enough information to answer that."
 - Never make up information not present in the context.
 - Cite page numbers when available (e.g. "Page 3").
 
 Context:
-{rich_context}
+{context}
 
 Question: {query}
 

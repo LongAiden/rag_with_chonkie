@@ -159,21 +159,33 @@ async def perform_document_search(
             # Prepend section context blocks so the LLM sees complete sections first
             context_parts.extend(section_context_blocks)
 
+            # Track which page contexts have already been included to avoid duplicates
+            seen_page_contexts: set = set()
+
             for i, result in enumerate(results):
                 page_info = ""
-                if result.get('metadata') and result['metadata'].get('page_number'):
-                    page_info = f" (Page {result['metadata']['page_number']})"
+                page_num = (result.get('metadata') or {}).get('page_number')
+                if page_num is not None:
+                    page_info = f" (Page {page_num})"
 
                 chunk_text = result['text']
                 page_content = (result.get('metadata') or {}).get('page_content', '')
 
                 # Include the full page context block only when it adds new information
-                if page_content and page_content.strip() != chunk_text.strip():
+                # and we haven't already emitted the same page context for this document
+                doc_id = result.get('document_id', '')
+                page_key = (doc_id, page_num if page_num is not None else 'no_page')
+                if (
+                    page_content
+                    and page_content.strip() != chunk_text.strip()
+                    and page_key not in seen_page_contexts
+                ):
                     source_block = (
                         f"[Source {i+1}{page_info}]\n"
                         f"[Matched chunk]: {chunk_text}\n"
                         f"[Full page context]:\n{page_content}"
                     )
+                    seen_page_contexts.add(page_key)
                 else:
                     source_block = f"[Source {i+1}{page_info}]: {chunk_text}"
 
