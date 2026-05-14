@@ -653,7 +653,7 @@ async def delete_table(
 
             if not table_exists:
                 await conn.close()
-                logfire.warn("Table deletion failed - table does not exist",
+                logfire.warning("Table deletion failed - table does not exist",
                              table_name=table_name)
                 raise HTTPException(
                     status_code=404,

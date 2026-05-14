@@ -301,7 +301,7 @@ RESPOND WITH VALID JSON ARRAY ONLY (no other text):
             )
 
             if not batch_data:
-                logfire.warn("No relationships found in batch response",
+                logfire.warning("No relationships found in batch response",
                            response_length=len(batch_text))
                 return {}
 

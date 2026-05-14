@@ -4,19 +4,20 @@ A Retrieval-Augmented Generation (RAG) system built with FastAPI, PostgreSQL + p
 
 ## How It Works
 
+The pipeline is unified — parsing, chunking, embedding, and retrieval are identical regardless of which LLM answers the question.
+
 ```
-PDF file  →  Parser (choose one)       →  MarkdownChunker  →  pgvector  →  Query + Rerank  →  LLM Answer (choose one)
-input/pdf/   • PyMuPDF (default)          (chonkie)           (PostgreSQL)   (BM25)            • Gemini 2.5 Flash  (google-generativeai SDK)
-             • Docling + Ollama VLM                                                             • DeepSeek-R1 8B    (Ollama /api/generate)
-             • Docling + Gemini Vision                                                          • DeepSeek-R1 1.5B  (Ollama)
-                                                                                                • Llama 3.2 3B      (Ollama)
+PDF file  →  Parser (choose one)       →  MarkdownChunker  →  Embedding          →  pgvector  →  Query + Rerank  →  LLM Answer
+input/pdf/   • PyMuPDF (default)          (chonkie)           all-MiniLM-L6-v2      (PostgreSQL)   (BM25)            ├─ Gemini 2.5 Flash  (cloud API)
+             • Docling + Ollama VLM                                                                                    └─ DeepSeek-R1 / Llama 3.2  (local via Ollama)
+             • Docling + Gemini Vision
 ```
 
-1. **Upload a PDF** - choose a parsing backend: fast PyMuPDF (default), Docling + local Ollama VLM (`qwen2.5vl:7b`), or Docling + Gemini Vision. The result is stored as Markdown in `input/markdown/`
-2. **Chunk** - the Markdown is split into chunks using a structure-aware MarkdownChunker
-3. **Embed** - each chunk is embedded with `all-MiniLM-L6-v2` and stored in pgvector
-4. **Query** - a question triggers vector similarity search + BM25 reranking
-5. **Answer** - top chunks are passed to your chosen LLM: **Gemini 2.5 Flash** (cloud) or **DeepSeek-R1 8B** running locally via Ollama
+1. **Parse a PDF** — choose a backend: fast PyMuPDF (default), Docling + local Ollama VLM, or Docling + Gemini Vision. Output is saved as Markdown in `input/markdown/`
+2. **Chunk** — Markdown is split with a structure-aware MarkdownChunker (chonkie)
+3. **Embed** — chunks are embedded with `all-MiniLM-L6-v2` (384-dim) and stored in pgvector
+4. **Query** — a question triggers vector similarity search + BM25 reranking
+5. **Answer** — the same retrieved chunks are passed to either **Gemini 2.5 Flash** (cloud) or a **local Ollama model** (DeepSeek-R1, Llama 3.2, etc.). The backend is selected automatically based on the model name.
 
 ---
 
@@ -68,6 +69,36 @@ Open **http://127.0.0.1:8000**
 | http://127.0.0.1:8000/redoc | ReDoc - readable API reference |
 
 > **Swagger UI** (`/docs`) lets you call every endpoint directly from the browser - no curl or Postman needed. Click an endpoint → **Try it out** → fill in params → **Execute**.
+
+---
+
+## Local Development
+
+For running notebooks and scripts outside Docker, use **uv** (fast Python package manager).
+
+```bash
+# Install uv (once)
+pip install uv
+
+# Install project + all dependencies into a virtualenv
+uv sync
+
+# Run a script with the project venv
+uv run python scripts/process_pdf.py
+
+# Or activate the venv manually
+.venv\Scripts\activate   # Windows
+source .venv/bin/activate  # macOS/Linux
+```
+
+Dependencies are defined in `pyproject.toml`. The `test` extras include pytest, pytest-asyncio, and httpx:
+
+```bash
+uv sync --extra test
+uv run pytest tests/unit -v
+```
+
+> **GPU note:** `pyproject.toml` configures the CPU-only PyTorch index for faster installs. If you need CUDA, remove `extra-index-url` from `[tool.uv]` and install PyTorch manually.
 
 ---
 
