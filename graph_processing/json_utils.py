@@ -135,7 +135,7 @@ class JSONParser:
                 json_str = match.group(0).strip()
                 # Limit size to prevent hanging on huge malformed JSON
                 if len(json_str) > 500000:  # 500KB limit
-                    logfire.warning("JSON too large, truncating", size=len(json_str))
+                    logfire.warn("JSON too large, truncating", size=len(json_str))
                     return None
 
                 data = json.loads(json_str)

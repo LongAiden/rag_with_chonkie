@@ -65,6 +65,10 @@ def _extract_page_content(markdown: str, page_number: int) -> str:
 
     return markdown[start_pos:end_pos].strip()
 
+# Disable tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
 @dataclass
 class Chunk:
     """Chunk data structure to match your existing interface."""
@@ -99,10 +103,10 @@ class EmbeddingGenerator:
         """
         # Validate and clean input text
         if text is None:
-            logfire.warning("Embedding called with None text, using empty string")
+            logfire.warn("Embedding called with None text, using empty string")
             text = ""
         elif not isinstance(text, str):
-            logfire.warning("Embedding called with non-string text, converting to string",
+            logfire.warn("Embedding called with non-string text, converting to string",
                          text_type=type(text).__name__)
             text = str(text)
 
@@ -155,7 +159,7 @@ class EmbeddingGenerator:
 
         # Log warnings if we encountered invalid texts
         if none_count > 0 or non_string_count > 0:
-            logfire.warning("Invalid texts encountered in batch embedding",
+            logfire.warn("Invalid texts encountered in batch embedding",
                          total_texts=len(texts),
                          none_count=none_count,
                          non_string_count=non_string_count,
@@ -276,17 +280,15 @@ class EmbeddingGenerator:
 class VectorStore:
     """Vector store using pgvector for efficient similarity search."""
 
-    def __init__(self, connection_params: Dict[str, str], table_name: str = "chunks", embedding_dim: int = 384):
+    def __init__(self, connection_params: Dict[str, str], table_name: str = "chunks"):
         """
         Initialize vector store with pgvector support.
         Args:
             connection_params: Database connection parameters
             table_name: Name of the chunks table
-            embedding_dim: Dimension of the embedding vectors
         """
         self.connection_params = connection_params
         self.table_name = table_name
-        self.embedding_dim = embedding_dim
         self.connection_string = self._build_connection_string()
         self._initialized = False
         self._init_lock = asyncio.Lock()
@@ -322,7 +324,7 @@ class VectorStore:
                         id TEXT PRIMARY KEY,
                         document_id TEXT NOT NULL,
                         text TEXT NOT NULL,
-                        embedding vector({self.embedding_dim}),
+                        embedding vector(384),  -- Adjust dimension as needed
                         metadata JSONB,
                         entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -583,7 +585,7 @@ class ChunkEmbeddingPipeline:
             table_name: Name of the chunks table
         """
         self.embedding_generator = EmbeddingGenerator(embedding_model)
-        self.vector_store = VectorStore(db_params, table_name, embedding_dim=self.embedding_generator.embedding_dim)
+        self.vector_store = VectorStore(db_params, table_name)
 
     async def ingest_document(self, file_path: str, chunk_size: int = 512,
                               similarity_threshold: float = 0.5,
@@ -695,13 +697,13 @@ class ChunkEmbeddingPipeline:
         for chunk in chunks:
             if chunk.text is None or (isinstance(chunk.text, str) and len(chunk.text.strip()) == 0):
                 invalid_chunks += 1
-                logfire.warning("Skipping chunk with None or empty text",
+                logfire.warn("Skipping chunk with None or empty text",
                              chunk_info=str(chunk)[:100])
             else:
                 valid_chunks.append(chunk)
 
         if invalid_chunks > 0:
-            logfire.warning("Filtered out invalid chunks during processing",
+            logfire.warn("Filtered out invalid chunks during processing",
                          total_chunks=len(chunks),
                          invalid_chunks=invalid_chunks,
                          valid_chunks=len(valid_chunks))
@@ -776,7 +778,7 @@ class ChunkEmbeddingPipeline:
             raw_full_content = getattr(chunk, 'full_content', '') or ''
 
             if len(raw_page_content) > 10000:
-                logfire.warning("Large page_content in metadata — consider moving to a dedicated column",
+                logfire.warn("Large page_content in metadata — consider moving to a dedicated column",
                              page_number=page_number,
                              char_count=len(raw_page_content))
 
