@@ -83,8 +83,8 @@ pip install uv
 # Install project + all dependencies into a virtualenv
 uv sync
 
-# Run a script or notebook with the project venv
-uv run python experiment/process_pdf_hybrid.py
+# Run a script with the project venv
+uv run python scripts/process_pdf.py
 
 # Or activate the venv manually
 .venv\Scripts\activate   # Windows
@@ -164,14 +164,9 @@ docker compose down
 | `postgres` | 5432 | PostgreSQL + pgvector |
 | `redis` | 6379 | Celery broker |
 | `celery_worker` | - | Background task worker |
-| `langfuse` | 3000 | LLM observability UI *(observability profile)* |
 | `pgadmin` | 5050 | DB admin UI *(dev profile only)* |
 
 ```bash
-# Start Langfuse (optional LLM observability)
-docker compose --profile observability up -d langfuse
-# Then open http://127.0.0.1:3000
-
 # Start pgAdmin (optional database UI)
 docker compose --profile dev up -d pgadmin
 # Then open http://127.0.0.1:5050
@@ -192,8 +187,6 @@ docker compose --profile dev up -d pgadmin
 | `GET` | `/health` | Health check |
 | `GET` | `/supported-types` | Accepted file formats |
 | `DELETE` | `/table/{name}` | Delete a document table |
-| `GET` | `/observability/traces` | LLM interaction traces |
-| `GET` | `/observability/stats` | Observability statistics |
 | `GET` | `/docs` | FastAPI Swagger UI |
 
 ### Examples
@@ -220,7 +213,7 @@ curl -X POST "http://127.0.0.1:8000/query" \
 ```
 rag_with_llama/
 │
-├── input/                        # Runtime I/O (created on first run)
+├── input/                        # Runtime I/O
 │   ├── pdf/                      # Drop PDFs here (e.g. llama2.pdf)
 │   └── markdown/                 # Auto-generated Markdown output
 │
@@ -230,10 +223,7 @@ rag_with_llama/
 │   │   ├── pdf_processor.py      # Raw text extraction fallback
 │   │   ├── docx_processor.py
 │   │   ├── txt_processor.py
-│   │   ├── processor_factory.py  # Picks processor by file type
-│   │   ├── ollama_pdf_parser.py  # Docling + Ollama VLM parser
-│   │   ├── gemini_docling_parser.py  # Docling + Gemini Vision parser
-│   │   └── pdf_parser_factory.py # Picks PDF parser by backend
+│   │   └── processor_factory.py  # Picks processor by file type
 │   ├── chunking/
 │   │   └── chunker_factory.py    # token / recursive / markdown / semantic
 │   ├── embedding/
@@ -254,25 +244,19 @@ rag_with_llama/
 │   ├── validators.py
 │   ├── templates.py              # Inline HTML templates
 │   └── routes/
-│       ├── document_routes.py    # All active endpoints
-│       ├── observability_routes.py  # LLM trace endpoints
-│       └── graph_routes.py       # Knowledge graph (disabled)
+│       └── document_routes.py    # All active endpoints
 │
 ├── config/
-│   ├── app_config.py             # AppConfig, AppSettings, DatabaseConfig
-│   └── graph_config.py           # Graph settings (unused)
+│   └── app_config.py             # AppConfig, AppSettings, DatabaseConfig
 │
 ├── models/
-│   ├── models.py                 # Pydantic request/response models
-│   └── graph_models.py           # Graph entity/relationship models
+│   └── models.py                 # Pydantic request/response models
 │
 ├── worker/
 │   ├── celery_app.py
 │   └── tasks.py                  # Async upload task
 │
 ├── graph_processing/             # Knowledge graph - DISABLED (code preserved)
-│
-├── migrations/                   # SQL migrations + runner
 │
 ├── tests/
 │   ├── unit/                     # No DB required
@@ -309,12 +293,10 @@ Copy `.env.example` to `.env` and set these values:
 | `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model for Q&A |
 | `OLLAMA_BASE_URL` | No | `http://host.docker.internal:11434` | Ollama endpoint (Docker uses host network) |
 | `OLLAMA_MODEL` | No | `deepseek-r1:8b` | Text model for RAG Q&A (runs locally via Ollama) |
-| `OLLAMA_VLM_MODEL` | No | `qwen3.5:4b` | VLM model for PDF image/table extraction (multimodal) |
-| `CHUNKER_TYPE` | No | `markdown` | `markdown` / `recursive` / `token` / `semantic` (`.env.example` sets `recursive`) |
+| `OLLAMA_VLM_MODEL` | No | `qwen3.5:9b` | VLM model for PDF image/table extraction (multimodal) |
+| `CHUNKER_TYPE` | No | `markdown` | `markdown` / `recursive` / `token` / `semantic` |
 | `APP_ACCESS_PASSWORD` | No | *(disabled)* | Password-protect the web UI |
 | `LOGFIRE_WRITE_TOKEN` | No | - | [Logfire](https://logfire.pydantic.dev/) monitoring |
-| `LANGFUSE_PUBLIC_KEY` | No | - | [Langfuse](https://langfuse.com/) LLM observability |
-| `LANGFUSE_SECRET_KEY` | No | - | Langfuse secret key |
 
 ### How LLM backends work
 
