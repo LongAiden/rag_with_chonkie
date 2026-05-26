@@ -71,7 +71,6 @@ Open **http://127.0.0.1:8000**
 
 ---
 
-<<<<<<< HEAD
 ## Local Development
 
 For running notebooks and scripts outside Docker, use **uv** (fast Python package manager).
@@ -102,8 +101,6 @@ uv run pytest tests/unit -v
 
 ---
 
-=======
->>>>>>> parent of 50f875f (Refactor the project)
 ## Web UI
 
 Open **http://127.0.0.1:8000**. The main page has two tabs: **Chat** and **Embed**.
