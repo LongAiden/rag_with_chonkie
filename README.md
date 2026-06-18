@@ -79,25 +79,25 @@ For running notebooks and scripts outside Docker, use **uv** (fast Python packag
 # Install uv (once)
 pip install uv
 
-# Install project + all dependencies into a virtualenv
-uv sync
+# Create a venv and install dependencies from deployment/requirements.txt
+uv venv
+uv pip install -r deployment/requirements.txt
 
 # Run a script with the project venv
 uv run python scripts/process_pdf.py
 
 # Or activate the venv manually
-.venv\Scripts\activate   # Windows
-source .venv/bin/activate  # macOS/Linux
+source .venv/bin/activate
 ```
 
-Dependencies are defined in `pyproject.toml`. The `test` extras include pytest, pytest-asyncio, and httpx:
+Dependencies are defined in `deployment/requirements.txt`. For testing, also install pytest:
 
 ```bash
-uv sync --extra test
-uv run pytest tests/unit -v
+uv pip install pytest pytest-asyncio httpx
+PYTHONPATH=. pytest tests/unit -v
 ```
 
-> **GPU note:** `pyproject.toml` configures the CPU-only PyTorch index for faster installs. If you need CUDA, remove `extra-index-url` from `[tool.uv]` and install PyTorch manually.
+> **GPU note:** If you need CUDA, install PyTorch with the CUDA wheels instead of CPU-only.
 
 ---
 
