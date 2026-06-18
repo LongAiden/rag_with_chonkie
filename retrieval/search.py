@@ -3,12 +3,26 @@ Document retrieval and search logic.
 Handles vector search, BM25 reranking, and response generation.
 """
 
+import asyncio
+import re
+import time
 import logfire
 from typing import List, Optional
+try:
+    from langfuse.decorators import observe, langfuse_context
+except ImportError:
+    langfuse_context = type("_Noop", (), {
+        "update_current_trace": staticmethod(lambda **_: None),
+        "update_current_observation": staticmethod(lambda **_: None),
+    })()
+    def observe(**__):
+        def decorator(fn): return fn
+        return decorator
 
 from retrieval.utils import rerank_bm25
 from retrieval.llm_operations import generate_llm_response
 from models.models import RAGResponse, RAGSource, RAGResponseMetadata
+from observability.llm_logger import InteractionPayload, log_interaction
 
 
 async def perform_document_search(
@@ -19,7 +33,8 @@ async def perform_document_search(
     config,
     document_ids: Optional[List[str]] = None,
     table_name: str = "document_chunks",
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-2.5-flash",
+    session_id: Optional[str] = None,
 ) -> RAGResponse:
     """
     Common document search logic with optional reranking.
@@ -36,6 +51,13 @@ async def perform_document_search(
     Returns:
         RAGResponse with answer, sources, and metadata
     """
+    # Attach session_id to the active Langfuse trace (created by the route wrapper)
+    if session_id:
+        langfuse_context.update_current_trace(
+            session_id=session_id,
+            metadata={"table_name": table_name},
+        )
+
     with logfire.span("document_search",
                      query=query[:100],  # Truncate long queries for logging
                      limit=limit,
@@ -103,24 +125,67 @@ async def perform_document_search(
                 table_used=table_name
             )
 
+        # Step 1.6: Sibling expansion for structural queries (how many, list all, count…)
+        _STRUCTURAL_RE = re.compile(
+            r'\b(how many|list all|all the|count|enumerate|what are the|steps in|'
+            r'number of|how much|summarize all|every)\b',
+            re.IGNORECASE
+        )
+        section_context_blocks = []
+        if _STRUCTURAL_RE.search(query):
+            seen_section_doc = set()
+            for r in results:
+                sp = (r.get('metadata') or {}).get('section_path', '')
+                doc_id = r.get('document_id', '')
+                if sp and (sp, doc_id) not in seen_section_doc:
+                    seen_section_doc.add((sp, doc_id))
+                    siblings = await pipeline.vector_store.get_chunks_by_section(
+                        section_path=sp,
+                        document_ids=[doc_id],
+                        limit=15,
+                    )
+                    if siblings:
+                        combined = "\n\n".join(s['text'] for s in siblings)
+                        section_context_blocks.append(
+                            f"[Section context: {sp}]\n{combined}"
+                        )
+            logfire.info("Sibling expansion",
+                         sections_expanded=len(section_context_blocks))
+
         # Step 2: Build context from retrieved chunks with page numbers and full page content
         with logfire.span("context_building"):
             context_parts = []
+
+            # Prepend section context blocks so the LLM sees complete sections first
+            context_parts.extend(section_context_blocks)
+
+            # Track which page contexts have already been included to avoid duplicates
+            seen_page_contexts: set = set()
+
             for i, result in enumerate(results):
                 page_info = ""
-                if result.get('metadata') and result['metadata'].get('page_number'):
-                    page_info = f" (Page {result['metadata']['page_number']})"
+                page_num = (result.get('metadata') or {}).get('page_number')
+                if page_num is not None:
+                    page_info = f" (Page {page_num})"
 
                 chunk_text = result['text']
                 page_content = (result.get('metadata') or {}).get('page_content', '')
 
                 # Include the full page context block only when it adds new information
-                if page_content and page_content.strip() != chunk_text.strip():
+                # and we haven't already emitted the same page context for this document
+                doc_id = result.get('document_id', '')
+                page_key = (doc_id, page_num if page_num is not None else 'no_page')
+                if (
+                    page_content
+                    and page_content.strip() != chunk_text.strip()
+                    and page_key not in seen_page_contexts
+                ):
                     source_block = (
                         f"[Source {i+1}{page_info}]\n"
                         f"[Matched chunk]: {chunk_text}\n"
                         f"[Full page context]:\n{page_content}"
                     )
+                    seen_page_contexts.add(page_key)
                 else:
                     source_block = f"[Source {i+1}{page_info}]: {chunk_text}"
 
@@ -133,10 +198,31 @@ async def perform_document_search(
                         context_length=len(context))
 
         # Step 3: Generate response with LLM
+        t0 = time.monotonic()
         llm_response = await generate_llm_response(query, context, results, config.agent, model=model)
+        latency_ms = int((time.monotonic() - t0) * 1000)
 
         # Calculate search statistics
         avg_similarity = sum(r['similarity'] for r in results) / len(results)
+
+        # Fire-and-forget: persist interaction to llm_interactions table (and Langfuse if configured)
+        asyncio.create_task(log_interaction(
+            InteractionPayload(
+                question=query,
+                answer=llm_response.answer,
+                model=model,
+                backend=llm_response.metadata.get("method", "unknown"),
+                latency_ms=latency_ms,
+                sources_used=len(results),
+                table_name=table_name,
+                rerank_method="bm25" if reranking_enabled else "none",
+                input_tokens=llm_response.input_tokens,
+                output_tokens=llm_response.output_tokens,
+                total_tokens=llm_response.total_tokens,
+                session_id=session_id,
+            ),
+            config.connection_string,
+        ))
 
         # Create structured response
         return RAGResponse(

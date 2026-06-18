@@ -71,6 +71,36 @@ Open **http://127.0.0.1:8000**
 
 ---
 
+## Local Development
+
+For running notebooks and scripts outside Docker, use **uv** (fast Python package manager).
+
+```bash
+# Install uv (once)
+pip install uv
+
+# Install project + all dependencies into a virtualenv
+uv sync
+
+# Run a script with the project venv
+uv run python scripts/process_pdf.py
+
+# Or activate the venv manually
+.venv\Scripts\activate   # Windows
+source .venv/bin/activate  # macOS/Linux
+```
+
+Dependencies are defined in `pyproject.toml`. The `test` extras include pytest, pytest-asyncio, and httpx:
+
+```bash
+uv sync --extra test
+uv run pytest tests/unit -v
+```
+
+> **GPU note:** `pyproject.toml` configures the CPU-only PyTorch index for faster installs. If you need CUDA, remove `extra-index-url` from `[tool.uv]` and install PyTorch manually.
+
+---
+
 ## Web UI
 
 Open **http://127.0.0.1:8000**. The main page has two tabs: **Chat** and **Embed**.

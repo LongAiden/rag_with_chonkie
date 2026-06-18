@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================
   # PostgreSQL Database with Extensions
@@ -15,11 +13,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4.0"
-          memory: 4G
+          cpus: "2.0"
+          memory: 1.5G
         reservations:
-          cpus: "1.0"
-          memory: 2G
+          cpus: "0.5"
+          memory: 512M
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-rag_db}
       POSTGRES_USER: ${POSTGRES_USER:-admin}
@@ -47,6 +45,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: rag_redis
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
     ports:
       - "6379:6379"
     networks:
@@ -67,11 +71,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4.0"
-          memory: 4G
+          cpus: "2.0"
+          memory: 1G
         reservations:
-          cpus: "1.0"
-          memory: 2G
+          cpus: "0.5"
+          memory: 256M
     environment:
       # Database connection
       POSTGRES_HOST: postgres
@@ -104,6 +108,11 @@ services:
       BATCH_SIZE: ${BATCH_SIZE:-10}
       ENABLE_PARALLEL_EXTRACTION: ${ENABLE_PARALLEL_EXTRACTION:-true}
       ENABLE_ENTITY_CACHING: ${ENABLE_ENTITY_CACHING:-true}
+
+      # Langfuse observability (optional — leave blank to disable)
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse:3000}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
 
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -147,6 +156,14 @@ services:
         - rag_with_llama:latest
     image: rag_with_llama:latest
     container_name: rag_celery_worker
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
     command: celery -A worker.celery_app worker --loglevel=info
     environment:
       POSTGRES_HOST: postgres
@@ -179,11 +196,57 @@ services:
     restart: unless-stopped
 
   # ============================================
+  # Langfuse (Optional - LLM Observability UI)
+  # Start with: docker compose --profile observability up langfuse
+  # UI at: http://localhost:3000
+  # ============================================
+  langfuse:
+    image: langfuse/langfuse:2.80
+    container_name: rag_langfuse
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/langfuse_db
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-use-a-real-secret-in-prod}
+      SALT: ${LANGFUSE_SALT:-changeme-use-a-real-salt-in-prod}
+      NEXTAUTH_URL: http://localhost:3000
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-rag-org}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-rag-project}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-lf-pk-placeholder}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-lf-sk-placeholder}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - rag_network
+    restart: unless-stopped
+
+  # ============================================
   # pgAdmin (Optional - Database Management UI)
   # ============================================
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4:8.14
     container_name: rag_pgadmin
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@rag.local}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
@@ -210,6 +273,13 @@ services:
       dockerfile: deployment/Dockerfile.test
     image: rag_with_llama:test
     container_name: rag_test
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
     environment:
       # Database connection (use service name 'postgres')
       DB_HOST: postgres

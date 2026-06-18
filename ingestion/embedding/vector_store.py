@@ -3,6 +3,7 @@ from ingestion.text_cleaning import TextCleanerFactory
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
+import asyncio
 import os
 import re
 import json
@@ -290,6 +291,7 @@ class VectorStore:
         self.table_name = table_name
         self.connection_string = self._build_connection_string()
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
     def _build_connection_string(self) -> str:
         """Build asyncpg connection string from parameters."""
@@ -304,55 +306,59 @@ class VectorStore:
 
     async def _initialize_database(self):
         """Initialize database with pgvector extension and table."""
-        try:
+        if self._initialized:
+            return
+
+        async with self._init_lock:
             if self._initialized:
                 return
 
-            conn = await self._get_connection()
             try:
-                # Create table with proper vector column
-                # Assuming 384-dimensional embeddings for all-MiniLM-L6-v2
-                # Adjust dimension based on your model
-                await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    id TEXT PRIMARY KEY,
-                    document_id TEXT NOT NULL,
-                    text TEXT NOT NULL,
-                    embedding vector(384),  -- Adjust dimension as needed
-                    metadata JSONB,
-                    entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-                """)
+                conn = await self._get_connection()
+                try:
+                    # Create table with proper vector column
+                    # Assuming 384-dimensional embeddings for all-MiniLM-L6-v2
+                    # Adjust dimension based on your model
+                    await conn.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {self.table_name} (
+                        id TEXT PRIMARY KEY,
+                        document_id TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        embedding vector(384),  -- Adjust dimension as needed
+                        metadata JSONB,
+                        entity_ids UUID[] DEFAULT ARRAY[]::UUID[],
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """)
 
-                # Create index for similarity search
-                await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_idx
-                ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
-                """)
+                    # Create index for similarity search
+                    await conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_idx
+                    ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
+                    """)
 
-                # Create index on document_id for filtering
-                await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS {self.table_name}_document_id_idx
-                ON {self.table_name} (document_id);
-                """)
+                    # Create index on document_id for filtering
+                    await conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS {self.table_name}_document_id_idx
+                    ON {self.table_name} (document_id);
+                    """)
 
-                self._initialized = True
-                print(f"Database initialized with table: {self.table_name}")
-            finally:
-                await conn.close()
+                    self._initialized = True
+                    print(f"Database initialized with table: {self.table_name}")
+                finally:
+                    await conn.close()
 
-        except Exception as e:
-            tb = traceback.format_exc()
-            logfire.error(
-                "Database initialization failed",
-                table_name=self.table_name,
-                error_type=type(e).__name__,
-                error=str(e),
-                traceback=tb,
-            )
-            print(f"[DB INIT ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
-            raise
+            except Exception as e:
+                tb = traceback.format_exc()
+                logfire.error(
+                    "Database initialization failed",
+                    table_name=self.table_name,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                    traceback=tb,
+                )
+                print(f"[DB INIT ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
+                raise
 
     async def add_chunks(self, chunks: List[Chunk], batch_size: int = 100):
         """Add chunks to vector store using batch insert for efficiency."""
@@ -479,6 +485,42 @@ class VectorStore:
         except Exception as e:
             print(f"Error searching chunks: {e}")
             raise
+
+    async def get_chunks_by_section(
+        self,
+        section_path: str,
+        document_ids: List[str],
+        limit: int = 20,
+    ) -> List[Dict]:
+        """Return all chunks that share the same section_path, ordered by chunk_index."""
+        if not section_path:
+            return []
+        try:
+            if not self._initialized:
+                await self._initialize_database()
+            conn = await self._get_connection()
+            query = f"""
+                SELECT id, text, metadata, document_id
+                FROM {self.table_name}
+                WHERE metadata->>'section_path' = $1
+                  AND document_id = ANY($2)
+                ORDER BY (metadata->>'chunk_index')::int
+                LIMIT $3
+            """
+            rows = await conn.fetch(query, section_path, document_ids, limit)
+            await conn.close()
+            return [
+                {
+                    'chunk_id': row['id'],
+                    'text': row['text'],
+                    'metadata': row['metadata'] if isinstance(row['metadata'], (dict, type(None))) else json.loads(row['metadata']),
+                    'document_id': row['document_id'],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"Error fetching chunks by section: {e}")
+            return []
 
     async def delete_document_chunks(self, document_id: str) -> int:
         """Delete all chunks for a specific document."""
@@ -620,10 +662,12 @@ class ChunkEmbeddingPipeline:
                     else:
                         last_section_prefix = section_prefix
 
+                    chunk.section_path = section_prefix
                     if section_prefix:
                         chunk.text = f"{section_prefix} - {chunk.text}"
                 else:
                     chunk.page_number = 1
+                    chunk.section_path = last_section_prefix
                     if last_section_prefix:
                         chunk.text = f"{last_section_prefix} - {chunk.text}"
 
@@ -744,6 +788,7 @@ class ChunkEmbeddingPipeline:
                 'start_index': getattr(chunk, 'start_index', None),
                 'end_index': getattr(chunk, 'end_index', None),
                 'page_number': page_number,
+                'section_path': getattr(chunk, 'section_path', ''),
                 'page_content': raw_page_content,
                 'full_content': raw_full_content,
                 'chunk_size': chunk_size,

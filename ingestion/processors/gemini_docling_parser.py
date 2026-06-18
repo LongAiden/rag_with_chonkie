@@ -94,6 +94,89 @@ def _fix_table_closing_tags(md: str) -> str:
     return "\n".join(result)
 
 
+def _strip_stray_headers(md: str) -> str:
+    """Remove markdown heading lines that appear outside <figure> or <table> blocks."""
+    lines, result, inside = md.splitlines(), [], False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('<figure') or stripped.startswith('<table'):
+            inside = True
+        if stripped.startswith('</figure>') or stripped.startswith('</table>'):
+            result.append(line)
+            inside = False
+            continue
+        if not inside and re.match(r'^#{1,6}\s', stripped):
+            continue
+        result.append(line)
+    return '\n'.join(result)
+
+
+def _detect_column_split(items: list, page_width: float) -> float | None:
+    """Return page midpoint if items cluster into two columns, else None."""
+    centroids = []
+    for item in items:
+        if item.prov:
+            b = item.prov[0].bbox
+            centroids.append((b.l + b.r) / 2)
+    if len(centroids) < 4:
+        return None
+    split = page_width / 2
+    left   = sum(1 for c in centroids if c < page_width * 0.45)
+    right  = sum(1 for c in centroids if c > page_width * 0.55)
+    middle = sum(1 for c in centroids if page_width * 0.45 <= c <= page_width * 0.55)
+    total  = len(centroids)
+    if left >= 2 and right >= 2 and middle / total < 0.15 and (left + right) / total > 0.70:
+        return split
+    return None
+
+
+def _fix_markdown_headings(markdown: str) -> str:
+    """Reclassify heading levels using section-number depth (e.g. '2.' → ##, '2.1' → ###)."""
+    import re
+    # Matches numbered section patterns: '2.', '2.1', '2.1.1', etc.
+    _num_pat = re.compile(r'^(\d+\.(?:\d+\.)*)\s+\S')
+
+    def _depth_prefix(num_str: str) -> str:
+        depth = num_str.count('.')
+        return '#' * min(depth + 1, 4)  # 1 dot → ##, 2 dots → ###, 3+ → ####
+
+    lines, result, in_table = markdown.splitlines(), [], False
+    for line in lines:
+        s = line.strip()
+        if '<table>' in s:
+            in_table = True
+        if '</table>' in s:
+            in_table = False
+            result.append(line)
+            continue
+        if in_table:
+            result.append(line)
+            continue
+
+        # Rule A: existing heading — reclassify if text starts with a section number
+        m = re.match(r'^(#{1,6})\s+(.*)', s)
+        if m:
+            heading_text = m.group(2).strip()
+            nm = _num_pat.match(heading_text)
+            if nm:
+                prefix = _depth_prefix(nm.group(1))
+                result.append(f"{prefix} {heading_text}")
+                continue
+            result.append(line)
+            continue
+
+        # Rule B: plain text that looks like a numbered section heading
+        if len(s) <= 90 and _num_pat.match(s) and not s.startswith('|'):
+            nm = _num_pat.match(s)
+            prefix = _depth_prefix(nm.group(1))
+            result.append(f"{prefix} {s}")
+            continue
+
+        result.append(line)
+
+    return '\n'.join(result)
+
+
 def _normalize_tables_in_markdown(md: str) -> str:
     out, buf = [], []
 
@@ -110,6 +193,60 @@ def _normalize_tables_in_markdown(md: str) -> str:
             out.append(line)
     flush()
     return "\n".join(out)
+
+
+_NUMBERED_HEADING_RE = re.compile(
+    r'^(\d+(?:\.\d+)*\.?)\s+([A-Z][^\n]{2,60})$'
+)
+_ALLCAPS_LINE_RE = re.compile(r'^[A-Z][A-Z\s\-/]{4,50}$')
+
+
+def _fix_markdown_headings(md: str) -> str:
+    """
+    Post-processing pass to promote plain-text lines that look like headings
+    but were emitted as TextItem by Docling (not SectionHeaderItem).
+
+    Rules (applied per-line, skipping content inside <table>…</table>):
+      1. Numbered sections: "1. Title", "1.1 Title", "2.3.4 Title" → ## or ###
+      2. ALL-CAPS short line → ##
+    Lines already starting with '#' are left unchanged.
+    """
+    lines = md.splitlines()
+    result = []
+    in_table = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Track table regions to avoid corrupting table content
+        if '<table>' in stripped.lower():
+            in_table = True
+        if '</table>' in stripped.lower():
+            in_table = False
+            result.append(line)
+            continue
+
+        if in_table or stripped.startswith('#') or not stripped:
+            result.append(line)
+            continue
+
+        # Rule 1: numbered section pattern
+        m = _NUMBERED_HEADING_RE.match(stripped)
+        if m:
+            numbering = m.group(1).rstrip('.')
+            depth = numbering.count('.')  # "1" → 0, "1.1" → 1, "1.1.1" → 2
+            prefix = '##' if depth == 0 else '###'
+            result.append(f"{prefix} {stripped}")
+            continue
+
+        # Rule 2: ALL-CAPS short line (e.g. "INTRODUCTION", "KEY CONCEPTS")
+        if _ALLCAPS_LINE_RE.match(stripped):
+            result.append(f"## {stripped}")
+            continue
+
+        result.append(line)
+
+    return "\n".join(result)
 
 
 # ── Main parser ───────────────────────────────────────────────────────────────
@@ -205,6 +342,7 @@ class GeminiDoclingParser(PDFParserBase):
     def _call_vlm(self, pil_img: PILImage.Image, prompt: str) -> str:
         raw = self._call_gemini(pil_img, prompt)
         raw = _strip_code_fences(raw)
+        raw = _strip_stray_headers(raw)
         raw = _normalize_tables_in_markdown(raw)
         return raw
 
@@ -282,6 +420,17 @@ class GeminiDoclingParser(PDFParserBase):
     def _process_page(self, page_no: int, items: list, doc) -> str:
         from docling_core.types.doc import TableItem, PictureItem, TextItem, SectionHeaderItem
 
+        # Detect two-column layout for this page
+        page = doc.pages.get(page_no)
+        page_width = page.size.width if page and page.size else None
+        split_x = _detect_column_split(items, page_width) if page_width else None
+
+        def _col_idx(item) -> int:
+            if split_x is None or not item.prov:
+                return 0
+            cx = (item.prov[0].bbox.l + item.prov[0].bbox.r) / 2
+            return 0 if cx <= split_x else 1
+
         # Pre-pass: find text items absorbed into adjacent picture crops
         adjacent_texts: dict = {}
         skip_ids: set = set()
@@ -298,6 +447,7 @@ class GeminiDoclingParser(PDFParserBase):
             if not item.prov:
                 continue
             y, x = self._item_sort_key(item)
+            col = _col_idx(item)
 
             if id(item) in skip_ids:
                 continue
@@ -368,7 +518,7 @@ class GeminiDoclingParser(PDFParserBase):
                     md = (item.text or "").strip()
                     if not md:
                         continue
-                    ordered.append((y, x, md))
+                    ordered.append((col, y, x, md))
                     continue
                 md = f"{prefix} {item.text}"
 
@@ -380,10 +530,10 @@ class GeminiDoclingParser(PDFParserBase):
             else:
                 continue
 
-            ordered.append((y, x, md))
+            ordered.append((col, y, x, md))
 
-        ordered.sort(key=lambda t: (t[0], t[1]))
-        body = "\n\n".join(md for _, _, md in ordered)
+        ordered.sort(key=lambda t: (t[0], t[1], t[2]))
+        body = "\n\n".join(md for _, _, _, md in ordered)
         return f"[PAGE:{page_no}]\n\n{body}"
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -438,7 +588,7 @@ class GeminiDoclingParser(PDFParserBase):
             if out_file:
                 out_file.close()
 
-        markdown = "".join(pages_md)
+        markdown = _fix_markdown_headings("".join(pages_md))
         if output_path:
             logger.info(f"Saved → {output_path}")
 
@@ -489,7 +639,7 @@ class GeminiDoclingParser(PDFParserBase):
             if out_file:
                 out_file.close()
 
-        markdown = "".join(pages_md)
+        markdown = _fix_markdown_headings("".join(pages_md))
         if output_path:
             logger.info(f"Saved → {output_path}")
 

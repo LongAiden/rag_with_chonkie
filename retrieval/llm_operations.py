@@ -5,6 +5,16 @@ Handles LLM-based response generation with fallback mechanisms.
 
 import os
 import logfire
+try:
+    from langfuse.decorators import observe, langfuse_context
+except ImportError:
+    langfuse_context = type("_Noop", (), {
+        "update_current_trace": staticmethod(lambda **_: None),
+        "update_current_observation": staticmethod(lambda **_: None),
+    })()
+    def observe(**__):
+        def decorator(fn): return fn
+        return decorator
 
 from models.models import SimpleRAGResponse
 from ingestion.processors.prompts import OLLAMA_RAG_PROMPT_TEMPLATE
@@ -60,31 +70,20 @@ class GeminiBackend:
 
         genai.configure(api_key=api_key)
 
-        # Build deduplicated context: one entry per unique (document, page).
-        seen_pages: dict = {}
-        for result in results:
-            meta = result.get('metadata') or {}
-            doc_id = result.get('document_id', '')
-            page_num = meta.get('page_number')
-            page_key = (doc_id, page_num if page_num is not None else 'full')
-            if page_key in seen_pages:
-                continue
-            content = (meta.get('full_content') or '').strip()
-            label = f"Page {page_num}" if page_num is not None else "Document"
-            seen_pages[page_key] = (label, content)
+        prompt = f"""You are a RAG assistant. Answer the question using ONLY the provided context below.
 
-        context_parts = [
-            f"[{label}]:\n{content}"
-            for label, content in seen_pages.values()
-            if content
-        ]
-        rich_context = "\n\n---\n\n".join(context_parts) or context
-
-        prompt = f"""You are a RAG assistant. Answer the question using ONLY the provided sources.
-Cite sources and page numbers when available.
+Context rules:
+- Blocks labelled [Section context: ...] contain ALL chunks from a document section in order. \
+Use them to answer structural questions (counts, lists, enumeration).
+- Blocks labelled [Source N] are the top retrieved chunks with their page context.
+- If a [Section context] block is present, prefer it over individual sources for \
+counting or listing tasks.
+- If the answer is not in the context, say "I don't have enough information to answer that."
+- Never make up information not present in the context.
+- Cite page numbers when available (e.g. "Page 3").
 
 Context:
-{rich_context}
+{context}
 
 Question: {query}
 
@@ -100,9 +99,7 @@ Answer:"""
             output_tokens = getattr(usage, 'candidates_token_count', None)
             total_tokens = getattr(usage, 'total_token_count', None)
 
-            logfire.info("Gemini response generated",
-                        model=self.model, input_tokens=input_tokens,
-                        output_tokens=output_tokens, sources_used=sources_used)
+            logfire.info("Gemini response generated", model=self.model, sources_used=sources_used)
 
             return SimpleRAGResponse(
                 answer=answer,
@@ -133,6 +130,33 @@ async def generate_llm_response(
     agent,
     model: str = "gemini-2.5-flash",
 ) -> SimpleRAGResponse:
+    """Clean implementation — no Langfuse decorator here to avoid serializing heavy objects."""
+    return await _traced_generate(query, context, results, model)
+
+
+@observe(name="llm_generate", as_type="generation")
+async def _traced_generate(
+    query: str,
+    context: str,
+    results: list,
+    model: str,
+) -> SimpleRAGResponse:
+    """Langfuse-traced LLM generation wrapper.
+
+    Only receives serialisable primitives (str, list, int) so @observe
+    never attempts to serialise a PyTorch model or Agent object.
+    """
     backend = _get_backend(model)
     logfire.info("LLM request", model=model, backend=type(backend).__name__, results_count=len(results))
-    return await backend.generate(query, context, results, agent)
+    response = await backend.generate(query, context, results, None)
+    langfuse_context.update_current_observation(
+        model=model,
+        usage={
+            "input": response.input_tokens,
+            "output": response.output_tokens,
+            "total": response.total_tokens,
+            "unit": "TOKENS",
+        },
+        metadata={"backend": type(backend).__name__.lower()},
+    )
+    return response

@@ -26,11 +26,11 @@ CREATE TABLE IF NOT EXISTS entities (
 );
 
 -- Indexes for entities
-CREATE INDEX idx_entities_entity_name ON entities(entity_name);
-CREATE INDEX idx_entities_entity_type ON entities(entity_type);
-CREATE INDEX idx_entities_confidence ON entities(confidence);
-CREATE INDEX idx_entities_embedding ON entities USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX idx_entities_metadata ON entities USING gin(metadata);
+CREATE INDEX IF NOT EXISTS idx_entities_entity_name ON entities(entity_name);
+CREATE INDEX IF NOT EXISTS idx_entities_entity_type ON entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_entities_confidence ON entities(confidence);
+CREATE INDEX IF NOT EXISTS idx_entities_embedding ON entities USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_entities_metadata ON entities USING gin(metadata);
 
 COMMENT ON TABLE entities IS 'ML/DL entities extracted from documents (models, algorithms, datasets, concepts, etc.)';
 COMMENT ON COLUMN entities.entity_name IS 'Name of the entity as it appears in text';
@@ -57,11 +57,11 @@ CREATE TABLE IF NOT EXISTS relationships (
 );
 
 -- Indexes for relationships
-CREATE INDEX idx_relationships_source ON relationships(source_entity_id);
-CREATE INDEX idx_relationships_target ON relationships(target_entity_id);
-CREATE INDEX idx_relationships_type ON relationships(relationship_type);
-CREATE INDEX idx_relationships_confidence ON relationships(confidence);
-CREATE INDEX idx_relationships_metadata ON relationships USING gin(metadata);
+CREATE INDEX IF NOT EXISTS idx_relationships_source ON relationships(source_entity_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_target ON relationships(target_entity_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_type ON relationships(relationship_type);
+CREATE INDEX IF NOT EXISTS idx_relationships_confidence ON relationships(confidence);
+CREATE INDEX IF NOT EXISTS idx_relationships_metadata ON relationships USING gin(metadata);
 
 COMMENT ON TABLE relationships IS 'Relationships between entities (USES, IMPROVES, TRAINED_ON, etc.)';
 COMMENT ON COLUMN relationships.relationship_type IS 'Type of relationship from ML/DL domain (USES, TRAINED_ON, IMPROVES, etc.)';
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS entity_nodes (
 );
 
 CREATE SEQUENCE IF NOT EXISTS entity_node_id_seq START WITH 1;
-CREATE INDEX idx_entity_nodes_node_id ON entity_nodes(node_id);
+CREATE INDEX IF NOT EXISTS idx_entity_nodes_node_id ON entity_nodes(node_id);
 
 COMMENT ON TABLE entity_nodes IS 'Mapping between entity UUIDs and pgRouting BIGINT node IDs';
 
@@ -94,9 +94,9 @@ CREATE TABLE IF NOT EXISTS entity_edges (
     relationship_type TEXT
 );
 
-CREATE INDEX idx_entity_edges_source ON entity_edges(source);
-CREATE INDEX idx_entity_edges_target ON entity_edges(target);
-CREATE INDEX idx_entity_edges_relationship ON entity_edges(relationship_id);
+CREATE INDEX IF NOT EXISTS idx_entity_edges_source ON entity_edges(source);
+CREATE INDEX IF NOT EXISTS idx_entity_edges_target ON entity_edges(target);
+CREATE INDEX IF NOT EXISTS idx_entity_edges_relationship ON entity_edges(relationship_id);
 
 COMMENT ON TABLE entity_edges IS 'pgRouting-compatible edges table (BIGINT IDs)';
 COMMENT ON COLUMN entity_edges.cost IS 'Cost calculated as (1.0 - confidence) * weight (lower = better)';
@@ -156,6 +156,7 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION sync_entity_edges IS 'Automatically sync relationships table to entity_edges for pgRouting';
 
 -- Trigger to automatically sync relationships to edges
+DROP TRIGGER IF EXISTS sync_relationships_to_edges ON relationships;
 CREATE TRIGGER sync_relationships_to_edges
     AFTER INSERT OR UPDATE OR DELETE ON relationships
     FOR EACH ROW EXECUTE FUNCTION sync_entity_edges();

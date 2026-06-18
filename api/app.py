@@ -12,6 +12,7 @@ Core functionality is distributed across specialized modules:
 - ingestion/chunking/chunker_factory.py: Chunking strategies
 """
 
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, Form, Header
@@ -21,13 +22,22 @@ from fastapi.staticfiles import StaticFiles
 from api.config import AppConfig, DEFAULT_TABLE_NAME, DEFAULT_EMBEDDING_MODEL
 from ingestion.embedding.vector_store import ChunkEmbeddingPipeline
 from models.models import QueryRequest, UploadResponse, RAGResponse
-
-# Initialize FastAPI application
-app = FastAPI(title="pgvector RAG API", version="1.0.0")
-app.mount("/images", StaticFiles(directory="images"), name="images")
+from migrations.runner import run_migrations
 
 # Global configuration
 config = AppConfig()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run migrations on startup, then yield to the application."""
+    await run_migrations(config.connection_string)
+    yield
+
+
+# Initialize FastAPI application
+app = FastAPI(title="pgvector RAG API", version="1.0.0", lifespan=lifespan)
+app.mount("/images", StaticFiles(directory="images"), name="images")
 
 
 async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
@@ -47,10 +57,13 @@ async def get_pipeline(table_name: str = DEFAULT_TABLE_NAME):
             embedding_model=DEFAULT_EMBEDDING_MODEL,
             table_name=table_name
         )
-        # Initialize the database for the new pipeline
-        await config.pipeline.vector_store._initialize_database()
     return config.pipeline
 
+
+# Observability routes
+import api.routes.observability_routes as _obs_routes
+_obs_routes._connection_string = config.connection_string
+app.include_router(_obs_routes.router)
 
 # -----------------------------------------------
 # GRAPH ROUTES - currently disabled

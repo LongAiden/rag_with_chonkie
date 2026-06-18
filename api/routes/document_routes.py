@@ -7,7 +7,8 @@ import uuid
 import traceback
 import logfire
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
+
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Header
 from fastapi.responses import HTMLResponse
@@ -20,6 +21,17 @@ from api.validators import (
     celery_upload_enabled
 )
 from retrieval.search import perform_document_search
+
+try:
+    from langfuse.decorators import observe, langfuse_context
+except ImportError:
+    langfuse_context = type("_Noop", (), {
+        "update_current_trace": staticmethod(lambda **_: None),
+        "update_current_observation": staticmethod(lambda **_: None),
+    })()
+    def observe(**__):
+        def decorator(fn): return fn
+        return decorator
 # Lazy import to avoid circular dependency - imported in upload_and_process function
 from api.templates import (
     HOME_PAGE_HTML,
@@ -205,6 +217,36 @@ async def upload_and_process(
             temp_path.unlink(missing_ok=True)
 
 
+async def _execute_traced_search(
+    query: str,
+    table_name: str,
+    limit: int,
+    threshold: float,
+    model: str,
+    session_id: Optional[str],
+    document_ids: Optional[List[str]],
+    config,
+    get_pipeline,
+) -> RAGResponse:
+    """Shared search logic used by both JSON and form endpoints.
+    
+    NO @observe decorator here — receives heavy objects (config, get_pipeline)
+    that cannot be serialized. Tracing wrappers live in each route handler.
+    """
+    pipeline = await get_pipeline(table_name)
+    return await perform_document_search(
+        query=query,
+        limit=limit,
+        threshold=threshold,
+        pipeline=pipeline,
+        config=config,
+        document_ids=document_ids,
+        table_name=table_name,
+        model=model,
+        session_id=session_id,
+    )
+
+
 @router.post("/query", response_model=RAGResponse)
 async def query_documents(
     request: QueryRequest,
@@ -217,17 +259,26 @@ async def query_documents(
     require_access_password(x_app_password)
     try:
         table_name = (request.table_name or DEFAULT_TABLE_NAME).strip()
-        pipeline = await get_pipeline(table_name)
-        result = await perform_document_search(
-            query=request.query,
-            limit=request.limit,
-            threshold=request.threshold,
-            pipeline=pipeline,
-            config=config,
-            document_ids=request.document_ids,
-            table_name=table_name,
-            model=request.model,
-        )
+
+        @observe(name="rag_query")
+        async def _run_search(query: str):
+            langfuse_context.update_current_trace(
+                session_id=request.session_id,
+                metadata={"table_name": table_name},
+            )
+            return await _execute_traced_search(
+                query=query,
+                table_name=table_name,
+                limit=request.limit,
+                threshold=request.threshold,
+                model=request.model,
+                session_id=request.session_id,
+                document_ids=request.document_ids,
+                config=config,
+                get_pipeline=get_pipeline,
+            )
+
+        result = await _run_search(request.query)
         # Return the structured RAGResponse directly
         return result
     except Exception as e:
@@ -249,17 +300,21 @@ async def query_documents_form(
     """Query documents using form data (for HTML form submission) with optional reranking."""
     require_access_password(access_password)
     try:
-        pipeline = await get_pipeline(table_name)
-        result = await perform_document_search(
-            query=query,
-            limit=limit,
-            threshold=threshold,
-            pipeline=pipeline,
-            config=config,
-            document_ids=None,
-            table_name=table_name,
-            model=model
-        )
+        @observe(name="rag_query")
+        async def _run_search(query: str):
+            return await _execute_traced_search(
+                query=query,
+                table_name=table_name,
+                limit=limit,
+                threshold=threshold,
+                model=model,
+                session_id=None,
+                document_ids=None,
+                config=config,
+                get_pipeline=get_pipeline,
+            )
+
+        result = await _run_search(query)
 
         # Build sources HTML with optional BM25 rerank scores
         sources_html = ''.join([f"""
