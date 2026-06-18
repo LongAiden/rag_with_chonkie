@@ -101,6 +101,50 @@ uv run pytest tests/unit -v
 
 ---
 
+## Testing
+
+Tests are designed to run inside Docker so dependencies and the PostgreSQL + pgvector extension are available.
+
+### Run all tests
+
+```bash
+docker compose --profile test run --rm test
+```
+
+### Run only unit tests (no database required)
+
+```bash
+docker compose --profile test run --rm test pytest tests/unit -v
+```
+
+### Run only integration tests (requires PostgreSQL)
+
+```bash
+docker compose --profile test run --rm test pytest tests/integration -v
+```
+
+### Run a specific test file
+
+```bash
+docker compose --profile test run --rm test pytest tests/unit/test_llm_provider.py -v
+```
+
+### Run with coverage
+
+```bash
+docker compose --profile test run --rm test pytest --cov=. --cov-report=html --cov-report=term
+```
+
+### Test markers
+
+- `unit` — no external services (mocked LLM, DB, embedding model)
+- `integration` — requires PostgreSQL running
+- `slow` — intentionally skipped with `pytest -m "not slow"`
+
+The `tests/` directory is mounted as a volume in the test container, so you can edit tests locally and re-run without rebuilding the image.
+
+---
+
 ## Web UI
 
 Open **http://127.0.0.1:8000**. The main page has two tabs: **Chat** and **Embed**.

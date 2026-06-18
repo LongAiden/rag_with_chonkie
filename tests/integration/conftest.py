@@ -8,11 +8,12 @@ import sys
 import pytest
 import asyncio
 import asyncpg
+import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 
 # Load environment variables from .env file
+project_root = Path(__file__).parent.parent.parent
 env_path = project_root / '.env'
 load_dotenv(env_path)
 
@@ -50,11 +51,46 @@ def logfire_token():
     return os.getenv('LOGFIRE_WRITE_TOKEN', '')
 
 
+class FakeEmbeddingModel:
+    """Deterministic fake embedding model for integration tests.
+
+    Replaces a real SentenceTransformer so retrieval tests are fast and
+    reproducible. Vectors are deterministically derived from the input text.
+    """
+
+    def __init__(self, embedding_dim: int = 384):
+        self.embedding_dim = embedding_dim
+
+    def encode(self, texts):
+        single = isinstance(texts, str)
+        if single:
+            texts = [texts]
+
+        result = []
+        for text in texts:
+            rng = np.random.default_rng(abs(hash(text)) % (2**32))
+            vec = rng.random(self.embedding_dim).astype(np.float32)
+            vec = vec / np.linalg.norm(vec)
+            result.append(vec)
+
+        if single:
+            return result[0]
+        return np.array(result)
+
+    def get_sentence_embedding_dimension(self):
+        return self.embedding_dim
+
+
 @pytest.fixture(scope="session")
 def embedding_model():
-    """Shared embedding model for tests (loaded once per session)."""
-    model_name = os.getenv('ENTITY_EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
-    return SentenceTransformer(model_name)
+    """Shared deterministic embedding model for tests."""
+    return FakeEmbeddingModel(embedding_dim=384)
+
+
+@pytest.fixture(scope="session")
+def embedding_dim():
+    """Embedding dimension used by the fake model."""
+    return 384
 
 
 @pytest.fixture
