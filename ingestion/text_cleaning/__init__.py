@@ -9,7 +9,6 @@ from .cleaners import (
     WhitespaceNormalizer,
     UnicodeNormalizer,
     TextCleaningPipeline,
-    TextCleanerFactory,
 )
 
 __all__ = [
@@ -21,5 +20,4 @@ __all__ = [
     'WhitespaceNormalizer',
     'UnicodeNormalizer',
     'TextCleaningPipeline',
-    'TextCleanerFactory',
 ]

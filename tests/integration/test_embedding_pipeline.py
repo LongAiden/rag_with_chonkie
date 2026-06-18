@@ -11,10 +11,6 @@ import pytest
 import numpy as np
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-
 
 class TestEmbeddingPipeline:
     """Integration tests for the embedding pipeline."""

@@ -7,15 +7,9 @@ Covers:
 
 Uses FastAPI TestClient with mocked pipeline and config — no real DB required.
 """
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
-
-project_root = Path(__file__).parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 
 def _make_app():

@@ -1,5 +1,5 @@
 from ingestion.processors.processor_factory import get_processor_for_file
-from ingestion.text_cleaning import TextCleanerFactory
+from ingestion.text_cleaning.cleaners import TextCleaningPipeline
 from repositories.table_repository import quote_ident
 from repositories.connection_pool import ConnectionPoolManager
 from dataclasses import dataclass
@@ -731,7 +731,7 @@ class ChunkEmbeddingPipeline:
                 f"No valid chunks created from document {document_id}. All {len(chunks)} chunks had None or empty text.")
 
         # Initialize robust text cleaning pipeline
-        text_cleaner = TextCleanerFactory.create_default_cleaner()
+        text_cleaner = TextCleaningPipeline()
 
         # Extract text and apply robust cleaning
         chunk_texts = []

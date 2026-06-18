@@ -14,11 +14,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 import pytest
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 
 class TestContentExtraction:
     """Tests for content extraction features."""

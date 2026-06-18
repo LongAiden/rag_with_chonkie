@@ -12,10 +12,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-
 # Load environment variables from .env file
 env_path = project_root / '.env'
 load_dotenv(env_path)

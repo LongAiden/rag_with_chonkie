@@ -24,11 +24,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 # Import directly from the module to avoid cascade through __init__.py
 
 
