@@ -19,6 +19,15 @@ class GraphConfig(BaseSettings):
     )
 
     # ============================================
+    # LLM Provider Selection
+    # ============================================
+    llm_provider: str = Field(
+        default="ollama",
+        validation_alias="GRAPH_LLM_PROVIDER",
+        description="LLM provider for graph extraction: 'ollama' (default, local) or 'gemini' (cloud, slower)"
+    )
+
+    # ============================================
     # LLM Configuration
     # ============================================
     gemini_api_key: str = Field(

@@ -43,6 +43,5 @@ htmlcov/
 
 # Cursor rules
 *.cursorrules
-*.md
 
 *.claude

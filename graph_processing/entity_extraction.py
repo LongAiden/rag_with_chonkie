@@ -12,6 +12,7 @@ import asyncpg
 import asyncio
 from .entity_types import EntityType, ENTITY_TYPE_DESCRIPTIONS
 from .llm_provider import LLMProvider
+from .entity_cache import EntityCache
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +79,21 @@ class EntityExtractor:
         Returns:
             List of extracted entities with metadata
         """
-        # Create extraction prompt
+        cached_entities = EntityCache.get(chunk_text)
+        if cached_entities is not None:
+            stored_entities = await self._store_entities(chunk_id, cached_entities)
+            logger.info(f"Used cached entities for chunk {chunk_id}: {len(stored_entities)} entities")
+            return stored_entities
+
         prompt = self._create_extraction_prompt(chunk_text)
 
         try:
             response = await self._call_llm_with_retry(prompt)
             entities_text = self.llm_provider.extract_text_from_response(response)
             entities = self._parse_entities(entities_text, confidence_threshold)
+
+            EntityCache.set(chunk_text, entities)
+
             stored_entities = await self._store_entities(chunk_id, entities)
 
             logger.info(f"Extracted {len(stored_entities)} entities from chunk {chunk_id}")

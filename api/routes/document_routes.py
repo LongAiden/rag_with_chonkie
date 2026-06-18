@@ -16,10 +16,10 @@ from fastapi.responses import HTMLResponse
 from api.config import DEFAULT_TABLE_NAME, DEFAULT_CHUNKING_SIMILARITY
 from api.validators import (
     validate_upload_params,
-    validate_table_name,
     require_access_password,
     celery_upload_enabled
 )
+from repositories.table_repository import TableRepository, validate_table_name
 from retrieval.search import perform_document_search
 
 try:
@@ -375,24 +375,11 @@ async def get_table_count(get_pipeline=None, pipeline=None):
             pipeline = await get_pipeline()
         conn = await pipeline.vector_store._get_connection()
         try:
-            tables = await conn.fetch("""
-                SELECT DISTINCT t1.table_name
-                FROM information_schema.columns t1
-                WHERE t1.table_schema = 'public'
-                AND t1.column_name = 'document_id'
-                AND EXISTS (
-                    SELECT 1 FROM information_schema.columns t2
-                    WHERE t2.table_name = t1.table_name
-                    AND t2.table_schema = 'public'
-                    AND t2.column_name = 'embedding'
-                )
-                AND t1.table_name NOT IN ('entities', 'relationships', 'entity_nodes', 'entity_edges')
-                ORDER BY t1.table_name
-            """)
-            table_names = [row['table_name'] for row in tables]
+            repo = TableRepository(conn)
+            table_names = await repo.list_chunk_tables()
             return {"table_count": len(table_names), "table_names": table_names}
         finally:
-            await conn.close()
+            await pipeline.vector_store._release_connection(conn)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to count tables: {str(e)}")
 
@@ -405,40 +392,22 @@ async def list_tables(get_pipeline=None):
         conn = await pipeline.vector_store._get_connection()
 
         try:
-            tables = await conn.fetch("""
-                SELECT DISTINCT t1.table_name
-                FROM information_schema.columns t1
-                WHERE t1.table_schema = 'public'
-                AND t1.column_name = 'document_id'
-                AND EXISTS (
-                    SELECT 1 FROM information_schema.columns t2
-                    WHERE t2.table_name = t1.table_name
-                    AND t2.table_schema = 'public'
-                    AND t2.column_name = 'embedding'
-                )
-                AND t1.table_name NOT IN ('entities', 'relationships', 'entity_nodes', 'entity_edges')
-                ORDER BY t1.table_name
-            """)
+            repo = TableRepository(conn)
+            table_names = await repo.list_chunk_tables()
 
             result = []
-            for row in tables:
-                tname = row['table_name']
-                stats = await conn.fetchrow(f"""
-                    SELECT
-                        COUNT(DISTINCT document_id) as documents,
-                        COUNT(*) as chunks
-                    FROM {tname}
-                """)
+            for tname in table_names:
+                counts = await repo.get_table_row_counts(tname)
                 result.append({
                     "table_name": tname,
-                    "documents": stats['documents'],
-                    "chunks": stats['chunks']
+                    "documents": counts['documents'],
+                    "chunks": counts['chunks']
                 })
 
             return {"tables": result, "total_tables": len(result)}
 
         finally:
-            await conn.close()
+            await pipeline.vector_store._release_connection(conn)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list tables: {str(e)}")
@@ -448,38 +417,19 @@ async def list_tables(get_pipeline=None):
 async def get_database_stats(get_pipeline=None):
     """Get database statistics from ALL chunk tables."""
     try:
-        # Get default pipeline for connection
         pipeline = await get_pipeline(DEFAULT_TABLE_NAME)
         conn = await pipeline.vector_store._get_connection()
 
         try:
-            # Find all tables with chunk structure (id, document_id, text, embedding columns)
-            tables = await conn.fetch("""
-                SELECT DISTINCT t1.table_name
-                FROM information_schema.columns t1
-                WHERE t1.table_schema = 'public'
-                AND t1.column_name = 'document_id'
-                AND EXISTS (
-                    SELECT 1 FROM information_schema.columns t2
-                    WHERE t2.table_name = t1.table_name
-                    AND t2.table_schema = 'public'
-                    AND t2.column_name = 'embedding'
-                )
-                AND t1.table_name NOT IN ('entities', 'relationships', 'entity_nodes', 'entity_edges')
-                ORDER BY t1.table_name
-            """)
+            repo = TableRepository(conn)
+            table_names = await repo.list_chunk_tables()
 
-            table_names = [row['table_name'] for row in tables]
-
-            print(
-                f"\n📊 Found chunk tables: {', '.join(table_names) if table_names else 'none'}")
+            print(f"\n📊 Found chunk tables: {', '.join(table_names) if table_names else 'none'}")
 
             if not table_names:
-                # No chunk tables found, use default
                 stats = await pipeline.get_stats()
                 table_display = pipeline.vector_store.table_name
             else:
-                # Aggregate stats from all chunk tables
                 total_docs = 0
                 total_chunks = 0
                 total_text_length = 0
@@ -487,22 +437,13 @@ async def get_database_stats(get_pipeline=None):
                 latest = None
 
                 for table_name in table_names:
-                    result = await conn.fetchrow(f"""
-                        SELECT
-                            COUNT(DISTINCT document_id) as docs,
-                            COUNT(*) as chunks,
-                            COALESCE(SUM(LENGTH(text)), 0) as total_length,
-                            MIN(created_at) as earliest,
-                            MAX(created_at) as latest
-                        FROM {table_name}
-                    """)
+                    result = await repo.get_table_stats(table_name)
 
                     total_docs += result['docs'] or 0
                     total_chunks += result['chunks'] or 0
-                    total_text_length += result['total_length'] or 0
+                    total_text_length += result['total_text_length'] or 0
 
-                    print(
-                        f"  {table_name}: {result['docs']} docs, {result['chunks']} chunks")
+                    print(f"  {table_name}: {result['docs']} docs, {result['chunks']} chunks")
 
                     if result['earliest'] and (earliest is None or result['earliest'] < earliest):
                         earliest = result['earliest']
@@ -518,10 +459,8 @@ async def get_database_stats(get_pipeline=None):
                 }
 
                 table_display = f"ALL TABLES ({len(table_names)} tables)"
-                print(
-                    f"📊 TOTAL: {total_docs} documents, {total_chunks} chunks\n")
+                print(f"📊 TOTAL: {total_docs} documents, {total_chunks} chunks\n")
 
-            # Use template with substitutions
             return STATS_PAGE_HTML.format(
                 total_documents=f"{stats['total_documents']:,}",
                 total_chunks=f"{stats['total_chunks']:,}",
@@ -531,14 +470,12 @@ async def get_database_stats(get_pipeline=None):
                 embedding_model=pipeline.embedding_generator.model_name,
                 embedding_dim=pipeline.embedding_generator.embedding_dim,
                 table_name=table_display,
-                earliest_chunk=str(
-                    stats['earliest_chunk']) if stats['earliest_chunk'] else 'No documents yet',
-                latest_chunk=str(
-                    stats['latest_chunk']) if stats['latest_chunk'] else 'No documents yet'
+                earliest_chunk=str(stats['earliest_chunk']) if stats['earliest_chunk'] else 'No documents yet',
+                latest_chunk=str(stats['latest_chunk']) if stats['latest_chunk'] else 'No documents yet'
             )
 
         finally:
-            await conn.close()
+            await pipeline.vector_store._release_connection(conn)
 
     except Exception as e:
         print(f"❌ Stats error: {str(e)}")
@@ -624,78 +561,60 @@ async def delete_table(
 
         try:
             pipeline_instance = await get_pipeline(table_name)
-
-            # Get connection and delete table quickly
             conn = await pipeline_instance.vector_store._get_connection()
-            row_count = 0
 
-            with logfire.span("table_existence_check"):
-                # Check if table exists and get approximate row count in one query
-                result = await conn.fetchrow("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables
-                        WHERE table_name = $1
-                    ) as table_exists,
-                    COALESCE((
-                        SELECT reltuples::bigint
-                        FROM pg_catalog.pg_class
-                        WHERE relname = $1
-                    ), 0) as estimated_rows;
-                """, table_name)
+            try:
+                repo = TableRepository(conn)
 
-                table_exists = result['table_exists']
-                # Approximate count (much faster)
-                row_count = result['estimated_rows']
+                with logfire.span("table_existence_check"):
+                    table_exists = await repo.table_exists(table_name)
+                    row_count = await repo.get_table_row_estimate(table_name)
 
-                logfire.info("Table existence check completed",
-                             table_exists=table_exists,
-                             estimated_rows=row_count)
+                    logfire.info("Table existence check completed",
+                                 table_exists=table_exists,
+                                 estimated_rows=row_count)
 
-            if not table_exists:
-                await conn.close()
-                logfire.warn("Table deletion failed - table does not exist",
-                             table_name=table_name)
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Table '{table_name}' does not exist"
-                )
+                if not table_exists:
+                    logfire.warn("Table deletion failed - table does not exist",
+                                 table_name=table_name)
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Table '{table_name}' does not exist"
+                    )
 
-            with logfire.span("table_data_deletion"):
-                # Two-step ultra-fast deletion: TRUNCATE then DROP
-                # Step 1: Instant data removal (no WAL overhead)
-                await conn.execute(f"TRUNCATE TABLE {table_name} CASCADE;")
-                logfire.info("Table data truncated successfully",
+                with logfire.span("table_data_deletion"):
+                    await repo.truncate_table(table_name)
+                    logfire.info("Table data truncated successfully",
+                                 table_name=table_name,
+                                 rows_deleted=row_count)
+
+                with logfire.span("table_schema_deletion"):
+                    await repo.drop_table(table_name)
+                    logfire.info("Table schema dropped successfully",
+                                 table_name=table_name)
+
+                if table_name == pipeline_instance.vector_store.table_name:
+                    config.pipeline = None
+                    logfire.info("Pipeline reset due to current table deletion",
+                                 table_name=table_name)
+
+                logfire.info("Table deletion completed successfully",
                              table_name=table_name,
-                             rows_deleted=row_count)
+                             estimated_rows_deleted=row_count)
 
-            with logfire.span("table_schema_deletion"):
-                # Step 2: Clean schema removal
-                await conn.execute(f"DROP TABLE {table_name} CASCADE;")
-                logfire.info("Table schema dropped successfully",
-                             table_name=table_name)
+                return {
+                    "status": "success",
+                    "message": f"Table '{table_name}' deleted successfully",
+                    "table_name": table_name,
+                    "estimated_rows_deleted": row_count,
+                    "timestamp": str(uuid.uuid1().time)
+                }
 
-            await conn.close()
-
-            # Reset pipeline if we deleted the current table
-            if table_name == pipeline_instance.vector_store.table_name:
-                config.pipeline = None
-                logfire.info("Pipeline reset due to current table deletion",
-                             table_name=table_name)
-
-            logfire.info("Table deletion completed successfully",
-                         table_name=table_name,
-                         estimated_rows_deleted=row_count)
-
-            return {
-                "status": "success",
-                "message": f"Table '{table_name}' deleted successfully",
-                "table_name": table_name,
-                "estimated_rows_deleted": row_count,
-                "timestamp": str(uuid.uuid1().time)
-            }
+            finally:
+                await pipeline_instance.vector_store._release_connection(conn)
 
         except HTTPException:
-            raise  # Re-raise HTTP exceptions
+            raise
         except Exception as e:
             logfire.error("Table deletion failed with unexpected error",
                           table_name=table_name,

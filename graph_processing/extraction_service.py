@@ -22,6 +22,7 @@ from config.graph_config import get_graph_config
 from graph_processing.entity_extraction import EntityExtractor, EntityExtractionError
 from graph_processing.relationship_extraction import RelationshipExtractor
 from graph_processing.ollama_provider import OllamaLLMProvider
+from repositories.table_repository import quote_ident
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,10 @@ class ExtractionService:
 
         # Semaphore for controlling concurrent API calls
         self._api_semaphore = asyncio.Semaphore(self.max_concurrent_calls)
+
+    @property
+    def safe_table_name(self) -> str:
+        return quote_ident(self.table_name)
 
     async def extract_from_chunk(
         self,
@@ -262,7 +267,7 @@ class ExtractionService:
         # Fetch all chunk texts at once
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT id, text FROM {self.table_name} WHERE id = ANY($1::text[])",
+                f"SELECT id, text FROM {self.safe_table_name} WHERE id = ANY($1::text[])",
                 chunk_ids
             )
 
@@ -372,7 +377,7 @@ class ExtractionService:
         # Get all chunk IDs for this document
         async with self.pool.acquire() as conn:
             chunks = await conn.fetch(
-                f"SELECT id FROM {self.table_name} WHERE document_id = $1",
+                f"SELECT id FROM {self.safe_table_name} WHERE document_id = $1",
                 str(document_id)
             )
             chunk_ids = [row['id'] for row in chunks]
@@ -413,10 +418,17 @@ async def create_extraction_service(
     """
     config = get_graph_config()
 
-    llm_provider = OllamaLLMProvider(
-        base_url=config.ollama_base_url,
-        model_name=config.ollama_model,
-    )
+    if config.llm_provider == "gemini":
+        from graph_processing.gemini_provider import GeminiLLMProvider
+        llm_provider = GeminiLLMProvider(
+            api_key=config.gemini_api_key,
+            model_name=config.gemini_model,
+        )
+    else:
+        llm_provider = OllamaLLMProvider(
+            base_url=config.ollama_base_url,
+            model_name=config.ollama_model,
+        )
 
     entity_threshold = entity_threshold or config.entity_confidence_threshold
     relationship_threshold = relationship_threshold or config.relationship_confidence_threshold

@@ -1,5 +1,7 @@
 from ingestion.processors.processor_factory import get_processor_for_file
 from ingestion.text_cleaning import TextCleanerFactory
+from repositories.table_repository import quote_ident
+from repositories.connection_pool import ConnectionPoolManager
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
@@ -292,17 +294,33 @@ class VectorStore:
         self.connection_string = self._build_connection_string()
         self._initialized = False
         self._init_lock = asyncio.Lock()
+        self._pool: Optional[asyncpg.Pool] = None
+
+    @property
+    def safe_table_name(self) -> str:
+        return quote_ident(self.table_name)
 
     def _build_connection_string(self) -> str:
         """Build asyncpg connection string from parameters."""
         return f"postgresql://{self.connection_params['user']}:{self.connection_params['password']}@{self.connection_params['host']}:{self.connection_params['port']}/{self.connection_params['dbname']}"
 
+    async def _get_pool(self) -> asyncpg.Pool:
+        """Get or create the connection pool."""
+        if self._pool is None:
+            self._pool = await ConnectionPoolManager.get_pool(self.connection_string)
+        return self._pool
+
     async def _get_connection(self):
-        """Get database connection with pgvector support."""
-        conn = await asyncpg.connect(self.connection_string)
-        # Enable pgvector extension
+        """Get a database connection from the pool with pgvector support."""
+        pool = await self._get_pool()
+        conn = await pool.acquire()
         await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
         return conn
+
+    async def _release_connection(self, conn):
+        """Release a connection back to the pool."""
+        pool = await self._get_pool()
+        await pool.release(conn)
 
     async def _initialize_database(self):
         """Initialize database with pgvector extension and table."""
@@ -320,7 +338,7 @@ class VectorStore:
                     # Assuming 384-dimensional embeddings for all-MiniLM-L6-v2
                     # Adjust dimension based on your model
                     await conn.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {self.table_name} (
+                    CREATE TABLE IF NOT EXISTS {self.safe_table_name} (
                         id TEXT PRIMARY KEY,
                         document_id TEXT NOT NULL,
                         text TEXT NOT NULL,
@@ -334,19 +352,19 @@ class VectorStore:
                     # Create index for similarity search
                     await conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_idx
-                    ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
+                    ON {self.safe_table_name} USING hnsw (embedding vector_cosine_ops);
                     """)
 
                     # Create index on document_id for filtering
                     await conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS {self.table_name}_document_id_idx
-                    ON {self.table_name} (document_id);
+                    ON {self.safe_table_name} (document_id);
                     """)
 
                     self._initialized = True
                     print(f"Database initialized with table: {self.table_name}")
                 finally:
-                    await conn.close()
+                    await self._release_connection(conn)
 
             except Exception as e:
                 tb = traceback.format_exc()
@@ -384,7 +402,7 @@ class VectorStore:
 
             # Use asyncpg's executemany for efficient batch insert
             insert_sql = f"""
-            INSERT INTO {self.table_name} (id, document_id, text, embedding, metadata)
+            INSERT INTO {self.safe_table_name} (id, document_id, text, embedding, metadata)
             VALUES ($1, $2, $3, $4::vector, $5::jsonb)
             ON CONFLICT (id) DO UPDATE SET
                 document_id = EXCLUDED.document_id,
@@ -398,7 +416,7 @@ class VectorStore:
                 batch = chunk_data[i:i + batch_size]
                 await conn.executemany(insert_sql, batch)
 
-            await conn.close()
+            await self._release_connection(conn)
             print(f"Added {len(chunks)} chunks to vector store")
 
         except Exception as e:
@@ -443,7 +461,7 @@ class VectorStore:
                     metadata,
                     document_id,
                     (1 - (embedding <=> $1::vector)) as similarity
-                FROM {self.table_name}
+                FROM {self.safe_table_name}
                 WHERE (1 - (embedding <=> $1::vector)) >= $2
             """
 
@@ -479,7 +497,7 @@ class VectorStore:
                     'similarity': float(row['similarity'])
                 })
 
-            await conn.close()
+            await self._release_connection(conn)
             return results
 
         except Exception as e:
@@ -501,14 +519,14 @@ class VectorStore:
             conn = await self._get_connection()
             query = f"""
                 SELECT id, text, metadata, document_id
-                FROM {self.table_name}
+                FROM {self.safe_table_name}
                 WHERE metadata->>'section_path' = $1
                   AND document_id = ANY($2)
                 ORDER BY (metadata->>'chunk_index')::int
                 LIMIT $3
             """
             rows = await conn.fetch(query, section_path, document_ids, limit)
-            await conn.close()
+            await self._release_connection(conn)
             return [
                 {
                     'chunk_id': row['id'],
@@ -530,9 +548,9 @@ class VectorStore:
 
             conn = await self._get_connection()
             result = await conn.execute(
-                f"DELETE FROM {self.table_name} WHERE document_id = $1", document_id)
+                f"DELETE FROM {self.safe_table_name} WHERE document_id = $1", document_id)
             deleted_count = int(result.split()[-1]) if result else 0
-            await conn.close()
+            await self._release_connection(conn)
             print(
                 f"Deleted {deleted_count} chunks for document: {document_id}")
             return deleted_count
@@ -554,7 +572,7 @@ class VectorStore:
                 AVG(LENGTH(text)) as avg_text_length,
                 MIN(created_at) as earliest_chunk,
                 MAX(created_at) as latest_chunk
-            FROM {self.table_name}
+            FROM {self.safe_table_name}
             """)
 
             stats = {
@@ -565,7 +583,7 @@ class VectorStore:
                 'latest_chunk': row['latest_chunk'].isoformat() if row['latest_chunk'] else None
             }
 
-            await conn.close()
+            await self._release_connection(conn)
             return stats
         except Exception as e:
             print(f"Error getting stats: {type(e).__name__}: {e}")
