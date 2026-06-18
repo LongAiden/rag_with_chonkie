@@ -30,7 +30,7 @@ COPY deployment/requirements.txt .
 RUN pip install --no-cache-dir --prefer-binary \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         -r requirements.txt && \
-    pip uninstall -y opencv-python 2>/dev/null; \
+    pip uninstall -y opencv-python 2>/dev/null || true && \
     pip install --no-cache-dir opencv-python-headless
 
 # Stage 2: Runtime image (stays lean)
