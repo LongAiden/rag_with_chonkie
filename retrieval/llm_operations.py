@@ -97,9 +97,11 @@ Answer:"""
             usage = response.usage_metadata
             input_tokens = getattr(usage, 'prompt_token_count', None)
             output_tokens = getattr(usage, 'candidates_token_count', None)
-            total_tokens = getattr(usage, 'total_token_count', None)
+            # Calculate total from input + output to avoid Gemini's cached token inflation
+            total_tokens = (input_tokens or 0) + (output_tokens or 0) if input_tokens or output_tokens else None
 
-            logfire.info("Gemini response generated", model=self.model, sources_used=sources_used)
+            logfire.info("Gemini response generated", model=self.model, sources_used=sources_used,
+                        input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens)
 
             return SimpleRAGResponse(
                 answer=answer,
@@ -149,14 +151,24 @@ async def _traced_generate(
     backend = _get_backend(model)
     logfire.info("LLM request", model=model, backend=type(backend).__name__, results_count=len(results))
     response = await backend.generate(query, context, results, None)
+
+    # Report usage to Langfuse with explicit input/output/total breakdown
+    # Langfuse expects: {"input": int, "output": int, "total": int, "unit": "TOKENS"}
+    usage_dict = {
+        "input": response.input_tokens or 0,
+        "output": response.output_tokens or 0,
+        "total": response.total_tokens or 0,
+        "unit": "TOKENS",
+    }
+
     langfuse_context.update_current_observation(
         model=model,
-        usage={
-            "input": response.input_tokens,
-            "output": response.output_tokens,
-            "total": response.total_tokens,
-            "unit": "TOKENS",
+        usage=usage_dict,
+        metadata={
+            "backend": type(backend).__name__.lower(),
+            "input_tokens": response.input_tokens,
+            "output_tokens": response.output_tokens,
+            "total_tokens": response.total_tokens,
         },
-        metadata={"backend": type(backend).__name__.lower()},
     )
     return response
