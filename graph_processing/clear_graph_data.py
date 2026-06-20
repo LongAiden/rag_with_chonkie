@@ -12,8 +12,6 @@ import asyncio
 import asyncpg
 import os
 import sys
-from pathlib import Path
-from typing import Optional
 from uuid import UUID
 import argparse
 

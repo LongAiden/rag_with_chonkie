@@ -2,7 +2,6 @@
 API routes for the RAG application.
 FastAPI endpoints for upload, query, stats, health checks, and table management.
 """
-
 import uuid
 import traceback
 import logfire

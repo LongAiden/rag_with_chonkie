@@ -205,12 +205,17 @@ docker compose down
 | `postgres` | 5432 | PostgreSQL + pgvector |
 | `redis` | 6379 | Celery broker |
 | `celery_worker` | - | Background task worker |
+| `langfuse` | 3000 | LLM observability UI *(observability profile only)* |
 | `pgadmin` | 5050 | DB admin UI *(dev profile only)* |
 
 ```bash
 # Start pgAdmin (optional database UI)
 docker compose --profile dev up -d pgadmin
 # Then open http://127.0.0.1:5050
+
+# Start Langfuse (optional LLM observability UI)
+docker compose --profile observability up -d langfuse
+# Then open http://127.0.0.1:3000
 ```
 
 ---
@@ -304,9 +309,10 @@ rag_with_llama/
 │   └── integration/              # Requires running postgres
 │
 ├── docs/                         # Developer documentation
-│   ├── CHUNKING_STRATEGIES.md
-│   ├── PROJECT_ARCHITECTURE_SUMMARY.md
-│   └── TESTING.md
+│   ├── 20260619_chunking-strategies.md
+│   ├── 20260619_docker-setup.md
+│   ├── 20260619_project-architecture-summary.md
+│   └── 20260619_testing.md
 │
 ├── deployment/
 │   ├── Dockerfile                # App image (uses Dockerfile.base)
@@ -495,6 +501,6 @@ docker exec -it rag_redis redis-cli
 
 ## Further Reading
 
-- [Chunking Strategies](docs/CHUNKING_STRATEGIES.md)
-- [Project Architecture](docs/PROJECT_ARCHITECTURE_SUMMARY.md)
-- [Testing Guide](docs/TESTING.md)
+- [Chunking Strategies](docs/20260619_chunking-strategies.md)
+- [Project Architecture](docs/20260619_project-architecture-summary.md)
+- [Testing Guide](docs/20260619_testing.md)

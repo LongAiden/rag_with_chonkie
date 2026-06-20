@@ -13,7 +13,6 @@ Features:
 import asyncio
 import asyncpg
 import logging
-import os
 from typing import List, Dict, Optional, Any
 from uuid import UUID
 from sentence_transformers import SentenceTransformer

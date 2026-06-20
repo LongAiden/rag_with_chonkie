@@ -2,7 +2,6 @@
 Gemini LLM Provider implementation for graph processing.
 """
 
-import asyncio
 import logging
 from typing import Any
 from google import generativeai as genai

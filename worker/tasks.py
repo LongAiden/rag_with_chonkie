@@ -4,7 +4,6 @@ Currently supports offloading entity extraction so API requests stay responsive.
 """
 
 import asyncio
-import os
 import uuid
 from typing import Any, Dict, List
 from pathlib import Path

@@ -7,7 +7,6 @@ No new dependencies — uses asyncpg already in the project.
 """
 
 import logging
-import os
 from pathlib import Path
 
 import asyncpg
